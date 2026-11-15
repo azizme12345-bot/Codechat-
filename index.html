@@ -333,6 +333,7 @@
                             <div id="projectZipStatus" class="text-[10px] text-slate-500 mt-2" aria-live="polite">No project uploaded yet.</div>
                             <div id="projectZipDetails" class="hidden mt-2 text-[10px] text-slate-600 space-y-1"></div>
                             <button id="projectPromptBtn" type="button" class="hidden w-full mt-2 bg-brand-blue hover:bg-brand-darkblue text-white text-xs font-bold py-2 rounded-xl"><i class="fa-regular fa-copy mr-1"></i> Copy Review Prompt</button>
+                            <button id="projectGeminiAnalyzeBtn" type="button" class="hidden w-full mt-2 bg-brand-orange hover:bg-orange-600 text-white text-xs font-bold py-2 rounded-xl transition"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Gemini se Analyze Karein</button>
                         </section>
 
                         <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Recent Chats</div>
@@ -401,7 +402,7 @@
                                 <button type="button" id="chatFileTriggerBtn" class="p-2 text-slate-400 hover:text-slate-600 transition" title="Attach file" aria-label="Attach file">
                                     <i class="fa-solid fa-paperclip"></i>
                                 </button>
-                                <input type="file" id="chatFileInput" class="hidden">
+                                <input type="file" id="chatFileInput" accept=".txt,.md,.html,.htm,.css,.js,.mjs,.cjs,.ts,.tsx,.jsx,.json,.xml,.svg,.csv,.yml,.yaml,.py,.java,.c,.cpp,.h,.php,.rb,.go,.rs,.sh,.sql,.env.example,.gitignore,text/*,application/json" class="hidden">
 
                                 <!-- Text Input -->
                                 <input type="text" id="chatInput" placeholder="Type your message or project idea..." class="w-full bg-transparent px-2 py-1 text-sm text-slate-800 focus:outline-none" autocomplete="off">
@@ -417,7 +418,7 @@
                                 </button>
                             </div>
                             <div class="flex items-center justify-between text-[11px] text-slate-400 px-2">
-                                <span>Frontend preview mode · AI connection will be enabled by the secure backend</span>
+                                <span>Powered by Gemini AI · Secure server API</span>
                                 <span id="fileStatus" class="text-brand-orange font-medium"></span>
                             </div>
                         </form>
@@ -1001,6 +1002,6 @@ console.log("ChatCode Workspace Ready");</textarea>
         <span id="toastMsg">Action completed!</span>
     </div>
 
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

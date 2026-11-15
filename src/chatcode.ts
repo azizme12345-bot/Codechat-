@@ -7,10 +7,28 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+interface ChatMessageTurn {
+  role: 'user' | 'model';
+  text: string;
+}
+
+interface AttachedTextFile {
+  name: string;
+  size: number;
+  content: string;
+}
+
+interface ExtractedProjectFile {
+  path: string;
+  content: string;
+  truncated: boolean;
+}
+
 interface ProjectSummary {
   name: string;
   files: string[];
   important: string[];
+  extracted: ExtractedProjectFile[];
   total: number;
   skipped: number;
 }
@@ -18,6 +36,7 @@ interface ProjectSummary {
 interface JSZipEntryLike {
   name: string;
   dir: boolean;
+  async: (type: 'string') => Promise<string>;
   _data?: {
     uncompressedSize?: number;
   };
@@ -31,33 +50,76 @@ interface JSZipStaticLike {
   loadAsync: (file: File, options?: { checkCRC32?: boolean }) => Promise<JSZipInstanceLike>;
 }
 
+interface SpeechRecognitionAlternativeLike {
+  transcript: string;
+}
+
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  [index: number]: SpeechRecognitionAlternativeLike;
+}
+
+interface SpeechRecognitionEventLike extends Event {
+  results: ArrayLike<SpeechRecognitionResultLike>;
+}
+
+interface SpeechRecognitionLike extends EventTarget {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: Event & { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
 declare global {
   interface Window {
     JSZip?: JSZipStaticLike;
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
   }
 }
 
+const MAX_CHAT_TEXT_FILE_BYTES = 300 * 1024; // 300 KB
 const MAX_ZIP_FILE_BYTES = 50 * 1024 * 1024; // 50 MB compressed archive limit
 const MAX_ZIP_ENTRIES = 5000;
 const MAX_SINGLE_UNCOMPRESSED_BYTES = 15 * 1024 * 1024; // 15 MB per file
 const MAX_TOTAL_UNCOMPRESSED_BYTES = 150 * 1024 * 1024; // 150 MB extracted total
+const MAX_ZIP_SNIPPET_BYTES = 20 * 1024; // 20 KB per extracted file for Gemini prompt
+const MAX_ZIP_TOTAL_CONTEXT_BYTES = 120 * 1024; // 120 KB total extracted context for Gemini
+
+const CHATCODE_SYSTEM_INSTRUCTION =
+  'You are ChatCode, a helpful, concise senior software engineer and coding assistant. Follow the Chat -> Plan -> Code workflow. When providing code, use fenced Markdown code blocks with the language tag (```html, ```css, ```javascript, etc.) so users can copy or send code directly to the workspace.';
 
 const CHATCODE_IGNORE = /(^|\/)(node_modules|\.git|dist|build|\.next|coverage|vendor)(\/|$)/i;
 const CHATCODE_IMPORTANT =
   /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|vite\.config\.[^/]+|next\.config\.[^/]+|tsconfig\.json|jsconfig\.json|README[^/]*|index\.html|\.env\.example|wrangler\.toml|vercel\.json)$/i;
+const TEXT_FILE_EXT_RE =
+  /\.(txt|md|markdown|html|htm|css|scss|less|js|mjs|cjs|ts|tsx|jsx|json|xml|svg|csv|yml|yaml|toml|ini|conf|py|java|c|cpp|h|hpp|cs|php|rb|go|rs|sh|bash|zsh|sql|gitignore|gitattributes|env\.example)$/i;
+const SECRET_ENV_RE = /(^|\/)\.env(\.|$)/i;
+const BINARY_EXT_RE =
+  /\.(png|jpe?g|gif|webp|ico|bmp|tiff|woff2?|ttf|eot|otf|mp3|mp4|wav|ogg|webm|pdf|zip|tar|gz|7z|rar|exe|dll|so|dylib|bin|wasm|map|lock)$/i;
 
 let currentTab: PageTab = 'home';
 let activeCodeTab: CodeTab = 'html';
 let billingMode: BillingMode = 'monthly';
 let isVoiceActive = false;
-let selectedFile: string | null = null;
+let isAiLoading = false;
+let attachedTextFile: AttachedTextFile | null = null;
+let speechRecognition: SpeechRecognitionLike | null = null;
 let deferredPrompt: BeforeInstallPromptEvent | null = null;
 let toastTimer: number | null = null;
+let chatConversation: ChatMessageTurn[] = [];
 
 let chatCodeProject: ProjectSummary = {
   name: '',
   files: [],
   important: [],
+  extracted: [],
   total: 0,
   skipped: 0,
 };
@@ -114,6 +176,33 @@ async function copyTextToClipboard(text: string): Promise<void> {
   } else {
     showToast('Could not copy to clipboard.');
   }
+}
+
+// ==========================================
+// GEMINI SERVER ENDPOINT CLIENT (/api/gemini)
+// ==========================================
+async function callGeminiApi(payload: {
+  messages?: ChatMessageTurn[];
+  prompt?: string;
+  systemInstruction?: string;
+}): Promise<string> {
+  const response = await fetch('/api/gemini', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  const data = (await response.json().catch(() => null)) as { text?: string; error?: string } | null;
+
+  if (!response.ok) {
+    throw new Error(data?.error || `Request failed (${response.status}).`);
+  }
+
+  if (!data || typeof data.text !== 'string' || !data.text.trim()) {
+    throw new Error(data?.error || 'Gemini returned an empty response.');
+  }
+
+  return data.text;
 }
 
 // ==========================================
@@ -216,7 +305,7 @@ function handleSearchQuery(query: string): void {
 
   const lower = trimmed.toLowerCase();
   const searchable: Array<{ tab: PageTab; label: string; keywords: string }> = [
-    { tab: 'chat', label: '💬 AI Chat Assistant & Project Analyzer', keywords: 'chat ai assistant prompt zip review' },
+    { tab: 'chat', label: '💬 AI Chat Assistant & Project Analyzer', keywords: 'chat ai assistant prompt zip review gemini' },
     { tab: 'code', label: '💻 Live Code Workspace (HTML, CSS, JS)', keywords: 'code editor html css js preview sandbox' },
     { tab: 'tools', label: '🔧 Developer Tools (JSON, Color, Case, URL, Word, Base64)', keywords: 'tools json formatter color picker case url word counter base64' },
     { tab: 'pricing', label: '💳 Pricing Plans (Free, Pro, Team)', keywords: 'pricing plans free pro team billing monthly yearly' },
@@ -282,36 +371,156 @@ function sendQuickPrompt(promptText: string): void {
   const chatInput = byId<HTMLInputElement>('chatInput');
   if (!chatInput) return;
   chatInput.value = promptText;
-  submitChatMessage();
+  void submitChatMessage();
 }
 
-function handleFileSelected(event: Event): void {
+function isSupportedTextFile(file: File): boolean {
+  if (file.type && (file.type.startsWith('text/') || file.type === 'application/json' || file.type === 'application/javascript' || file.type === 'application/xml' || file.type === 'image/svg+xml')) {
+    return true;
+  }
+  return TEXT_FILE_EXT_RE.test(file.name);
+}
+
+async function handleFileSelected(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
-  selectedFile = file.name;
+
   const statusEl = byId<HTMLElement>('fileStatus');
-  if (statusEl) {
-    statusEl.textContent = `Attached: ${file.name}`;
+
+  if (file.size > MAX_CHAT_TEXT_FILE_BYTES) {
+    attachedTextFile = null;
+    input.value = '';
+    if (statusEl) statusEl.textContent = 'File exceeds 300 KB limit.';
+    showToast('Text file must be 300 KB or smaller.');
+    return;
   }
-  showToast(`File attached: ${file.name}`);
+
+  if (!isSupportedTextFile(file)) {
+    attachedTextFile = null;
+    input.value = '';
+    if (statusEl) statusEl.textContent = 'Only plain text or code files are supported.';
+    showToast('Please attach a plain text or code file.');
+    return;
+  }
+
+  try {
+    const content = await file.text();
+    if (content.includes('\0')) {
+      attachedTextFile = null;
+      input.value = '';
+      if (statusEl) statusEl.textContent = 'Binary files are not supported.';
+      showToast('Binary files cannot be attached.');
+      return;
+    }
+
+    attachedTextFile = {
+      name: file.name,
+      size: file.size,
+      content,
+    };
+    const sizeKb = Math.max(1, Math.round(file.size / 1024));
+    if (statusEl) {
+      statusEl.textContent = `Attached: ${file.name} (${sizeKb} KB)`;
+    }
+    showToast(`File attached: ${file.name}`);
+  } catch {
+    attachedTextFile = null;
+    input.value = '';
+    showToast('Could not read the selected file.');
+  }
+}
+
+function setMicVisual(active: boolean): void {
+  isVoiceActive = active;
+  const micBtn = byId<HTMLElement>('micBtn');
+  if (!micBtn) return;
+  if (active) {
+    micBtn.classList.add('text-brand-orange', 'animate-pulse');
+  } else {
+    micBtn.classList.remove('text-brand-orange', 'animate-pulse');
+  }
 }
 
 function toggleVoiceMic(): void {
-  isVoiceActive = !isVoiceActive;
-  const micBtn = byId<HTMLElement>('micBtn');
-  if (!micBtn) return;
-
-  if (isVoiceActive) {
-    micBtn.classList.add('text-brand-orange', 'animate-pulse');
-    showToast('Voice listening active...');
-  } else {
-    micBtn.classList.remove('text-brand-orange', 'animate-pulse');
+  if (isVoiceActive && speechRecognition) {
+    speechRecognition.stop();
+    setMicVisual(false);
     showToast('Voice input stopped.');
+    return;
+  }
+
+  const SpeechCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechCtor) {
+    setMicVisual(false);
+    showToast('Voice input is not supported in this browser.');
+    return;
+  }
+
+  try {
+    const recognition = new SpeechCtor();
+    speechRecognition = recognition;
+    recognition.lang = 'en-US';
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    let finalTranscript = '';
+
+    recognition.onresult = (event) => {
+      let interim = '';
+      for (let i = 0; i < event.results.length; i += 1) {
+        const res = event.results[i];
+        const part = res[0]?.transcript ?? '';
+        if (res.isFinal) {
+          finalTranscript += `${part} `;
+        } else {
+          interim += part;
+        }
+      }
+      const chatInput = byId<HTMLInputElement>('chatInput');
+      if (chatInput) {
+        chatInput.value = (finalTranscript || interim).trim();
+      }
+      if (finalTranscript.trim()) {
+        recognition.stop();
+        void submitChatMessage();
+      }
+    };
+
+    recognition.onerror = () => {
+      setMicVisual(false);
+      speechRecognition = null;
+      showToast('Voice input could not capture audio.');
+    };
+
+    recognition.onend = () => {
+      setMicVisual(false);
+      speechRecognition = null;
+    };
+
+    recognition.start();
+    setMicVisual(true);
+    showToast('Listening... speak your prompt');
+  } catch {
+    setMicVisual(false);
+    speechRecognition = null;
+    showToast('Could not start voice input.');
   }
 }
 
-function createCodeCardElement(codeSnippet: string): HTMLElement {
+function detectCodeTabFromLanguage(lang: string): CodeTab {
+  const normalized = lang.trim().toLowerCase();
+  if (normalized === 'css' || normalized === 'scss') return 'css';
+  if (normalized === 'js' || normalized === 'javascript' || normalized === 'ts' || normalized === 'typescript') {
+    return 'js';
+  }
+  return 'html';
+}
+
+function createCodeCardElement(codeSnippet: string, language = 'html'): HTMLElement {
+  const cleanLang = language.trim() || 'code';
+  const targetTab = detectCodeTabFromLanguage(cleanLang);
+
   const wrapper = document.createElement('div');
   wrapper.className = 'mt-3 bg-slate-900 text-slate-100 rounded-xl p-3 code-font text-xs overflow-x-auto border border-slate-800';
 
@@ -319,7 +528,7 @@ function createCodeCardElement(codeSnippet: string): HTMLElement {
   header.className = 'flex items-center justify-between border-b border-slate-800 pb-2 mb-2 text-[11px] text-slate-400';
 
   const label = document.createElement('span');
-  label.textContent = 'HTML Component';
+  label.textContent = cleanLang.toUpperCase() + ' Component';
 
   const actions = document.createElement('div');
   actions.className = 'flex gap-2';
@@ -341,7 +550,7 @@ function createCodeCardElement(codeSnippet: string): HTMLElement {
   sendIcon.className = 'fa-solid fa-square-arrow-up-right mr-1';
   sendBtn.append(sendIcon, document.createTextNode('Send to Workspace'));
   sendBtn.addEventListener('click', () => {
-    transferToWorkspace(codeSnippet);
+    transferToWorkspace(codeSnippet, targetTab);
   });
 
   actions.append(copyBtn, sendBtn);
@@ -356,13 +565,78 @@ function createCodeCardElement(codeSnippet: string): HTMLElement {
   return wrapper;
 }
 
+function appendInlineMarkdown(container: HTMLElement, text: string): void {
+  const tokenRegex = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  let lastIdx = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenRegex.exec(text)) !== null) {
+    if (match.index > lastIdx) {
+      container.appendChild(document.createTextNode(text.slice(lastIdx, match.index)));
+    }
+    const token = match[0];
+    if (token.startsWith('**') && token.endsWith('**')) {
+      const strong = document.createElement('strong');
+      strong.textContent = token.slice(2, -2);
+      container.appendChild(strong);
+    } else if (token.startsWith('`') && token.endsWith('`')) {
+      const code = document.createElement('code');
+      code.className = 'bg-slate-200/80 text-slate-900 px-1 py-0.5 rounded code-font text-xs';
+      code.textContent = token.slice(1, -1);
+      container.appendChild(code);
+    }
+    lastIdx = tokenRegex.lastIndex;
+  }
+
+  if (lastIdx < text.length) {
+    container.appendChild(document.createTextNode(text.slice(lastIdx)));
+  }
+}
+
+function renderFormattedTextBlock(host: HTMLElement, rawText: string): void {
+  const lines = rawText.split('\n');
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    const p = document.createElement('p');
+    if (trimmed.startsWith('### ') || trimmed.startsWith('## ') || trimmed.startsWith('# ')) {
+      p.className = 'font-bold text-slate-900 pt-1';
+      appendInlineMarkdown(p, trimmed.replace(/^#{1,3}\s+/, ''));
+    } else {
+      appendInlineMarkdown(p, line);
+    }
+    host.appendChild(p);
+  });
+}
+
+function renderMarkdownIntoHost(host: HTMLElement, markdownText: string): void {
+  const fenceRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = fenceRegex.exec(markdownText)) !== null) {
+    const before = markdownText.slice(lastIndex, match.index);
+    if (before.trim()) {
+      renderFormattedTextBlock(host, before);
+    }
+    const lang = match[1] || 'html';
+    const code = match[2].replace(/\n$/, '');
+    host.appendChild(createCodeCardElement(code, lang));
+    lastIndex = fenceRegex.lastIndex;
+  }
+
+  const remaining = markdownText.slice(lastIndex);
+  if (remaining.trim()) {
+    renderFormattedTextBlock(host, remaining);
+  }
+}
+
 function appendMessage(
   sender: 'user' | 'ai',
-  buildBody: (paragraphHost: HTMLElement) => void,
-  codeSnippet: string | null = null
-): void {
+  buildBody: (paragraphHost: HTMLElement) => void
+): HTMLElement | null {
   const container = byId<HTMLElement>('chatMessages');
-  if (!container) return;
+  if (!container) return null;
 
   const msgDiv = document.createElement('div');
   msgDiv.className = 'flex gap-3 animate-fade-in';
@@ -376,7 +650,7 @@ function appendMessage(
     const bubble = document.createElement('div');
     bubble.className = 'bg-brand-blue text-white rounded-2xl rounded-tr-none p-4 max-w-2xl text-sm ml-auto order-1 shadow-sm';
     const body = document.createElement('div');
-    body.className = 'whitespace-pre-wrap break-words';
+    body.className = 'whitespace-pre-wrap break-words space-y-1';
     buildBody(body);
     bubble.appendChild(body);
 
@@ -395,113 +669,100 @@ function appendMessage(
     buildBody(body);
     bubble.appendChild(body);
 
-    if (codeSnippet) {
-      bubble.appendChild(createCodeCardElement(codeSnippet));
-    }
-
     msgDiv.append(avatar, bubble);
   }
 
   container.appendChild(msgDiv);
   container.scrollTop = container.scrollHeight;
+  return msgDiv;
 }
 
-function generateAiResponse(userText: string): void {
-  const lower = userText.toLowerCase();
+function appendThinkingBubble(): HTMLElement | null {
+  return appendMessage('ai', (host) => {
+    const p = document.createElement('p');
+    p.className = 'text-slate-500 italic';
+    p.textContent = 'Gemini is thinking...';
+    host.appendChild(p);
+  });
+}
 
-  if (lower.includes('todo') || lower.includes('plan')) {
-    const code = `<div style="padding:20px; background:#fff; border-radius:12px;">\n  <h3>My Todo List</h3>\n  <input type="text" placeholder="Add task..." style="padding:8px; border:1px solid #ccc; border-radius:6px;">\n  <button style="background:#0D5CFF; color:#fff; padding:8px 15px; border:none; border-radius:6px;">Add</button>\n</div>`;
-
-    appendMessage(
-      'ai',
-      (host) => {
-        const intro = document.createElement('p');
-        intro.textContent = 'Here is a structured plan for your web app project:';
-
-        const steps = document.createElement('div');
-        steps.className = 'space-y-1';
-        const stepList: Array<[string, string]> = [
-          ['Step 1:', ' Define layout with title, input bar, and clear button.'],
-          ['Step 2:', ' Add CSS card styling and interactive hover states.'],
-          ['Step 3:', ' Implement JavaScript array list management.'],
-        ];
-        stepList.forEach(([title, desc]) => {
-          const line = document.createElement('p');
-          const strong = document.createElement('strong');
-          strong.textContent = title;
-          line.append(strong, document.createTextNode(desc));
-          steps.appendChild(line);
-        });
-
-        const outro = document.createElement('p');
-        outro.textContent = 'I generated an initial HTML structure for you:';
-
-        host.append(intro, steps, outro);
-      },
-      code
-    );
-  } else if (lower.includes('landing') || lower.includes('component')) {
-    const code = `<section style="text-align:center; padding:40px; background:#E8F0FF; border-radius:16px;">\n  <h1 style="color:#0D5CFF; font-size:28px;">Build Faster Today</h1>\n  <p style="color:#475569;">The smart platform for developers.</p>\n  <button style="background:#FF7A00; color:white; padding:12px 24px; border:none; border-radius:8px; font-weight:bold;">Get Started Free</button>\n</section>`;
-
-    appendMessage(
-      'ai',
-      (host) => {
-        const p = document.createElement('p');
-        p.textContent = 'Great choice! Here is a clean hero component structure designed with high contrast CTA buttons:';
-        host.appendChild(p);
-      },
-      code
-    );
-  } else {
-    appendMessage('ai', (host) => {
-      const p1 = document.createElement('p');
-      const italic = document.createElement('em');
-      italic.textContent = userText;
-      p1.append(document.createTextNode('I analyzed your query: "'), italic, document.createTextNode('".'));
-
-      const p2 = document.createElement('p');
-      p2.textContent =
-        "Let's plan out the implementation together. Would you like me to draft the HTML structure or provide JavaScript logic first?";
-
-      host.append(p1, p2);
-    });
+async function submitChatMessage(): Promise<void> {
+  if (isAiLoading) {
+    showToast('Please wait for the current AI response.');
+    return;
   }
-}
 
-function submitChatMessage(): void {
   const input = byId<HTMLInputElement>('chatInput');
   if (!input) return;
 
-  const userMsg = input.value.trim();
-  if (!userMsg) return;
+  const typedText = input.value.trim();
+  const fileAttachment = attachedTextFile;
+  if (!typedText && !fileAttachment) return;
+
+  const displayText = fileAttachment
+    ? `${typedText || 'Please review and explain this attached file.'}\n[Attached: ${fileAttachment.name}]`
+    : typedText;
+
+  const apiTurnText = fileAttachment
+    ? `${typedText || 'Please review and explain this attached file.'}\n\n--- Attached File: ${fileAttachment.name} ---\n${fileAttachment.content}`
+    : typedText;
 
   appendMessage('user', (host) => {
     const p = document.createElement('p');
-    p.textContent = userMsg;
+    p.textContent = displayText;
     host.appendChild(p);
   });
 
   input.value = '';
+  attachedTextFile = null;
+  const fileInput = byId<HTMLInputElement>('chatFileInput');
+  if (fileInput) fileInput.value = '';
   const fileStatus = byId<HTMLElement>('fileStatus');
   if (fileStatus) fileStatus.textContent = '';
-  selectedFile = null;
 
-  window.setTimeout(() => {
-    generateAiResponse(userMsg);
-  }, 700);
+  chatConversation.push({ role: 'user', text: apiTurnText });
+  const recentHistory = chatConversation.slice(-16);
+
+  isAiLoading = true;
+  const loadingBubble = appendThinkingBubble();
+
+  try {
+    const aiText = await callGeminiApi({
+      messages: recentHistory,
+      systemInstruction: CHATCODE_SYSTEM_INSTRUCTION,
+    });
+    loadingBubble?.remove();
+    chatConversation.push({ role: 'model', text: aiText });
+    appendMessage('ai', (host) => {
+      renderMarkdownIntoHost(host, aiText);
+    });
+  } catch (err) {
+    loadingBubble?.remove();
+    chatConversation.pop();
+    const message = err instanceof Error ? err.message : 'Failed to get Gemini response.';
+    appendMessage('ai', (host) => {
+      const p = document.createElement('p');
+      p.className = 'text-red-600 font-medium';
+      p.textContent = `Error: ${message}`;
+      host.appendChild(p);
+    });
+    showToast(message);
+  } finally {
+    isAiLoading = false;
+  }
 }
 
 function handleChatSubmit(event: Event): void {
   event.preventDefault();
-  submitChatMessage();
+  void submitChatMessage();
 }
 
-function transferToWorkspace(codeSnippet: string): void {
-  const htmlEditor = byId<HTMLTextAreaElement>('code-html');
-  if (htmlEditor) {
-    htmlEditor.value = codeSnippet;
+function transferToWorkspace(codeSnippet: string, targetTab: CodeTab = 'html'): void {
+  const editor = byId<HTMLTextAreaElement>(`code-${targetTab}`);
+  if (editor) {
+    editor.value = codeSnippet;
   }
-  selectCodeTab('html');
+  selectCodeTab(targetTab);
   switchTab('code');
   showToast('Code transferred to Workspace!');
 }
@@ -509,6 +770,11 @@ function transferToWorkspace(codeSnippet: string): void {
 function startNewChat(): void {
   const container = byId<HTMLElement>('chatMessages');
   if (!container) return;
+
+  chatConversation = [];
+  attachedTextFile = null;
+  const fileStatus = byId<HTMLElement>('fileStatus');
+  if (fileStatus) fileStatus.textContent = '';
 
   container.replaceChildren();
   appendMessage('ai', (host) => {
@@ -635,7 +901,7 @@ function clearCodeEditors(): void {
 }
 
 // ==========================================
-// DEVELOPER TOOLS FUNCTIONS
+// DEVELOPER TOOLS FUNCTIONS (CLIENT-SIDE)
 // ==========================================
 function formatJson(): void {
   const input = byId<HTMLTextAreaElement>('toolJsonInput');
@@ -817,7 +1083,7 @@ function handleSupportSubmit(event: Event): void {
 }
 
 // ==========================================
-// PROJECT ZIP INSPECTOR (WITH HARDENED CHECKS)
+// PROJECT ZIP INSPECTOR + GEMINI ANALYSIS
 // ==========================================
 function isSafeZipPath(rawName: string): boolean {
   if (!rawName || rawName.includes('\0') || /[\x00-\x1F\x7F]/.test(rawName)) {
@@ -834,6 +1100,53 @@ function isSafeZipPath(rawName: string): boolean {
   return true;
 }
 
+async function extractReadableProjectFiles(safeEntries: JSZipEntryLike[]): Promise<ExtractedProjectFile[]> {
+  const candidates = safeEntries
+    .filter((entry) => {
+      if (SECRET_ENV_RE.test(entry.name) && !entry.name.endsWith('.env.example')) {
+        return false;
+      }
+      if (BINARY_EXT_RE.test(entry.name)) {
+        return false;
+      }
+      const size = entry._data?.uncompressedSize ?? 0;
+      if (size > 200 * 1024) {
+        return false;
+      }
+      return CHATCODE_IMPORTANT.test(entry.name) || TEXT_FILE_EXT_RE.test(entry.name);
+    })
+    .sort((a, b) => {
+      const aImp = CHATCODE_IMPORTANT.test(a.name) ? 0 : 1;
+      const bImp = CHATCODE_IMPORTANT.test(b.name) ? 0 : 1;
+      if (aImp !== bImp) return aImp - bImp;
+      return a.name.length - b.name.length;
+    });
+
+  const extracted: ExtractedProjectFile[] = [];
+  let totalBytes = 0;
+
+  for (const entry of candidates) {
+    if (extracted.length >= 25 || totalBytes >= MAX_ZIP_TOTAL_CONTEXT_BYTES) {
+      break;
+    }
+    try {
+      const raw = await entry.async('string');
+      if (raw.includes('\0')) continue;
+      const truncated = raw.length > MAX_ZIP_SNIPPET_BYTES;
+      const snippet = truncated ? `${raw.slice(0, MAX_ZIP_SNIPPET_BYTES)}\n/* ...truncated... */` : raw;
+      if (totalBytes + snippet.length > MAX_ZIP_TOTAL_CONTEXT_BYTES) {
+        continue;
+      }
+      totalBytes += snippet.length;
+      extracted.push({ path: entry.name, content: snippet, truncated });
+    } catch {
+      // Skip unreadable entry
+    }
+  }
+
+  return extracted;
+}
+
 async function inspectProjectZip(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
@@ -842,9 +1155,11 @@ async function inspectProjectZip(event: Event): Promise<void> {
   const status = byId<HTMLElement>('projectZipStatus');
   const details = byId<HTMLElement>('projectZipDetails');
   const promptBtn = byId<HTMLElement>('projectPromptBtn');
-  if (!status || !details || !promptBtn) return;
+  const geminiBtn = byId<HTMLElement>('projectGeminiAnalyzeBtn');
+  if (!status || !details || !promptBtn || !geminiBtn) return;
 
   promptBtn.classList.add('hidden');
+  geminiBtn.classList.add('hidden');
   details.classList.add('hidden');
   details.replaceChildren();
 
@@ -919,16 +1234,18 @@ async function inspectProjectZip(event: Event): Promise<void> {
 
     const important = safeEntries.filter((entry) => CHATCODE_IMPORTANT.test(entry.name)).map((entry) => entry.name);
     const skippedCount = fileEntries.length - safeEntries.length;
+    const extracted = await extractReadableProjectFiles(safeEntries);
 
     chatCodeProject = {
       name: file.name,
       files: safeEntries.slice(0, 250).map((entry) => entry.name),
       important,
+      extracted,
       total: safeEntries.length,
       skipped: skippedCount,
     };
 
-    status.textContent = 'ZIP structure loaded. This is a file-list inspection, not an AI code audit yet.';
+    status.textContent = `ZIP loaded (${extracted.length} readable source files ready for Gemini analysis).`;
 
     const addDetailRow = (label: string, value: string): void => {
       const row = document.createElement('div');
@@ -953,6 +1270,7 @@ async function inspectProjectZip(event: Event): Promise<void> {
 
     details.classList.remove('hidden');
     promptBtn.classList.remove('hidden');
+    geminiBtn.classList.remove('hidden');
     showToast('Project ZIP structure inspected');
   } catch {
     status.textContent = 'Could not read this ZIP. Please check that the archive is valid.';
@@ -962,11 +1280,79 @@ async function inspectProjectZip(event: Event): Promise<void> {
 }
 
 function buildProjectReviewPrompt(): string {
-  return `You are ChatCode's careful senior codebase analyst. Review the uploaded repository ZIP itself; do not guess or claim to have read files you cannot access. First report exact file coverage and files not inspected. Ignore node_modules, .git, build outputs and generated files. Inspect project entry points, package/config files, routes, components, API calls, environment-variable usage, security, responsive UI and deployment configuration. For every finding cite exact file paths and line numbers when available. Separate confirmed bugs from risks and suggestions. Do not modify code yet. Produce: (1) architecture map, (2) working vs demo-only features, (3) bugs with evidence, (4) security/deployment issues, (5) prioritized plan in small steps. Ask for approval before each implementation step. Preserve existing UI, colors, logo, layout and working features unless explicitly approved. Never expose API keys; use server-side environment variables only.\n\nProject archive: ${chatCodeProject.name}\nFile count discovered by browser ZIP listing: ${chatCodeProject.total}\nImportant files detected: ${chatCodeProject.important.join(', ') || 'None detected'}\nVisible file paths (first 250):\n${chatCodeProject.files.join('\n')}`;
+  const fileContentsSection = chatCodeProject.extracted.length
+    ? `\n\nReadable source/config files extracted (${chatCodeProject.extracted.length} files):\n` +
+      chatCodeProject.extracted
+        .map((f) => `\n=== FILE: ${f.path} ===\n${f.content}`)
+        .join('\n')
+    : '';
+
+  return `You are ChatCode's careful senior codebase analyst. Review ONLY the project files and paths provided below; do not guess or claim to have read files outside this list. Report exact file coverage, architecture structure, bugs/errors found in the extracted files, security/deployment issues, and prioritized next improvements.\n\nProject archive: ${chatCodeProject.name}\nTotal visible files: ${chatCodeProject.total}\nImportant files detected: ${chatCodeProject.important.join(', ') || 'None detected'}\nVisible file paths (first 250):\n${chatCodeProject.files.join('\n')}${fileContentsSection}`;
 }
 
 function copyProjectReviewPrompt(): void {
   void copyTextToClipboard(buildProjectReviewPrompt());
+}
+
+async function analyzeProjectWithGemini(): Promise<void> {
+  if (!chatCodeProject.name) {
+    showToast('Please upload a project ZIP first.');
+    return;
+  }
+  if (isAiLoading) {
+    showToast('Please wait for the current AI response.');
+    return;
+  }
+
+  const analyzeBtn = byId<HTMLButtonElement>('projectGeminiAnalyzeBtn');
+  if (analyzeBtn) {
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = 'Analyzing with Gemini...';
+  }
+
+  appendMessage('user', (host) => {
+    const p = document.createElement('p');
+    p.textContent = `Analyze project ZIP "${chatCodeProject.name}" (${chatCodeProject.total} files, ${chatCodeProject.extracted.length} source files extracted).`;
+    host.appendChild(p);
+  });
+
+  const reviewPrompt = buildProjectReviewPrompt();
+  chatConversation.push({ role: 'user', text: reviewPrompt });
+  isAiLoading = true;
+  const loadingBubble = appendThinkingBubble();
+
+  try {
+    const aiText = await callGeminiApi({
+      prompt: reviewPrompt,
+      systemInstruction: CHATCODE_SYSTEM_INSTRUCTION,
+    });
+    loadingBubble?.remove();
+    chatConversation.push({ role: 'model', text: aiText });
+    appendMessage('ai', (host) => {
+      renderMarkdownIntoHost(host, aiText);
+    });
+    showToast('Gemini project analysis complete!');
+  } catch (err) {
+    loadingBubble?.remove();
+    chatConversation.pop();
+    const message = err instanceof Error ? err.message : 'Failed to analyze project.';
+    appendMessage('ai', (host) => {
+      const p = document.createElement('p');
+      p.className = 'text-red-600 font-medium';
+      p.textContent = `Error: ${message}`;
+      host.appendChild(p);
+    });
+    showToast(message);
+  } finally {
+    isAiLoading = false;
+    if (analyzeBtn) {
+      analyzeBtn.disabled = false;
+      analyzeBtn.replaceChildren();
+      const icon = document.createElement('i');
+      icon.className = 'fa-solid fa-wand-magic-sparkles mr-1';
+      analyzeBtn.append(icon, document.createTextNode(' Gemini se Analyze Karein'));
+    }
+  }
 }
 
 function copyBuildWorkflowPrompt(): void {
@@ -1088,7 +1474,9 @@ export function initChatCode(): void {
   byId<HTMLElement>('chatFileTriggerBtn')?.addEventListener('click', () => {
     byId<HTMLInputElement>('chatFileInput')?.click();
   });
-  byId<HTMLInputElement>('chatFileInput')?.addEventListener('change', handleFileSelected);
+  byId<HTMLInputElement>('chatFileInput')?.addEventListener('change', (e) => {
+    void handleFileSelected(e);
+  });
   byId<HTMLElement>('micBtn')?.addEventListener('click', toggleVoiceMic);
 
   document.querySelectorAll<HTMLElement>('[data-quick-prompt]').forEach((btn) => {
@@ -1106,6 +1494,9 @@ export function initChatCode(): void {
     void inspectProjectZip(e);
   });
   byId<HTMLElement>('projectPromptBtn')?.addEventListener('click', copyProjectReviewPrompt);
+  byId<HTMLElement>('projectGeminiAnalyzeBtn')?.addEventListener('click', () => {
+    void analyzeProjectWithGemini();
+  });
 
   // Code workspace
   document.querySelectorAll<HTMLElement>('[data-code-tab]').forEach((btn) => {

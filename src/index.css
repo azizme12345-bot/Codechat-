@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-brand-blue: #0D5CFF;
+  --color-brand-darkblue: #0043CE;
+  --color-brand-lightblue: #E8F0FF;
+  --color-brand-orange: #FF7A00;
+  --color-brand-lightorange: #FFF3E6;
+  --color-brand-graybg: #F8FAFC;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #F8FAFC;
+}
+
+.code-font {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F1F5F9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+.gradient-border {
+  background: linear-gradient(135deg, #0D5CFF 0%, #FF7A00 100%);
+}
+
+.hero-glow {
+  box-shadow: 0 20px 50px -15px rgba(13, 92, 255, 0.15);
+}
+
+.card-glow {
+  transition: all 0.3s ease;
+}
+
+.card-glow:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px -10px rgba(13, 92, 255, 0.15);
+}
+
+/* Glassmorphism */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.dark .glass-panel {
+  background: rgba(15, 23, 42, 0.85);
+}
+
+/* Code Editor Line Numbers */
+.editor-container {
+  display: flex;
+  position: relative;
+}
+
+.line-numbers {
+  width: 44px;
+  padding: 12px 8px 12px 0;
+  text-align: right;
+  color: #64748B;
+  user-select: none;
+  background: #0F172A;
+  border-right: 1px solid #1E293B;
+  font-size: 13px;
+  line-height: 1.5rem;
+  white-space: pre;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s ease-out;
+}

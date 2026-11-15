@@ -1,0 +1,1654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ChatCode — Flow Together, Code Better</title>
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#0D5CFF">
+    <meta name="description" content="ChatCode - Chat, Plan, Code — All in One Place. Smart AI assistant and code editor to build projects seamlessly.">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            blue: '#0D5CFF',
+                            darkblue: '#0043CE',
+                            lightblue: '#E8F0FF',
+                            orange: '#FF7A00',
+                            lightorange: '#FFF3E6',
+                            graybg: '#F8FAFC'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'Consolas', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F8FAFC;
+        }
+        .code-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #F1F5F9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #CBD5E1;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94A3B8;
+        }
+        .gradient-border {
+            background: linear-gradient(135deg, #0D5CFF 0%, #FF7A00 100%);
+        }
+        .hero-glow {
+            box-shadow: 0 20px 50px -15px rgba(13, 92, 255, 0.15);
+        }
+        .card-glow {
+            transition: all 0.3s ease;
+        }
+        .card-glow:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 30px -10px rgba(13, 92, 255, 0.15);
+        }
+        /* Glassmorphism */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .dark .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+        }
+        /* Code Editor Line Numbers */
+        .editor-container {
+            display: flex;
+            position: relative;
+        }
+        .line-numbers {
+            width: 40px;
+            padding: 12px 0;
+            text-align: right;
+            color: #64748B;
+            user-select: none;
+            background: #0F172A;
+            border-right: 1px solid #1E293B;
+            font-size: 13px;
+            line-height: 1.5rem;
+        }
+    </style>
+</head>
+<body class="text-slate-800 bg-slate-50 antialiased min-h-screen flex flex-col selection:bg-brand-blue selection:text-white">
+
+    <!-- MAIN HEADER NAVIGATION -->
+    <header class="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200/80 transition-all">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+            
+            <!-- Logo & Tagline -->
+            <div class="flex items-center gap-3 cursor-pointer" onclick="switchTab('home')">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center shadow-md bg-white p-1 border border-slate-100">
+                    <!-- SVG Logo: Isometric 3D Cube with Blue/Orange gradient and Code Brackets -->
+                    <svg viewBox="0 0 100 100" class="w-full h-full">
+                        <defs>
+                            <linearGradient id="logoBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#0D5CFF"/>
+                                <stop offset="100%" stop-color="#0039B3"/>
+                            </linearGradient>
+                            <linearGradient id="logoOrange" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="#FF9E2C"/>
+                                <stop offset="100%" stop-color="#FF5500"/>
+                            </linearGradient>
+                        </defs>
+                        <!-- Top Cube Face -->
+                        <polygon points="50,10 88,30 50,50 12,30" fill="url(#logoBlue)" />
+                        <!-- Left Cube Face -->
+                        <polygon points="12,30 50,50 50,90 12,70" fill="#0043CE" />
+                        <!-- Right Cube Face -->
+                        <polygon points="50,50 88,30 88,70 50,90" fill="url(#logoOrange)" />
+                        <!-- Code Brackets Overlay -->
+                        <path d="M 32,38 L 24,45 L 32,52" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                        <path d="M 68,38 L 76,45 L 68,52" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                        <path d="M 54,36 L 46,54" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-extrabold text-xl tracking-tight text-slate-900">Chat<span class="text-brand-orange">Code</span></span>
+                    </div>
+                    <p class="text-[10px] text-slate-500 font-medium tracking-tight -mt-1 hidden sm:block">Flow Together, Code Better</p>
+                </div>
+            </div>
+
+            <!-- Desktop Navigation Links -->
+            <nav class="hidden md:flex items-center gap-1 bg-slate-100/80 p-1 rounded-full border border-slate-200/60">
+                <button onclick="switchTab('home')" id="nav-home" class="nav-btn px-4 py-1.5 text-sm font-semibold rounded-full text-brand-blue bg-white shadow-sm transition">
+                    <i class="fa-solid fa-house mr-1.5"></i>Home
+                </button>
+                <button onclick="switchTab('chat')" id="nav-chat" class="nav-btn px-4 py-1.5 text-sm font-medium rounded-full text-slate-600 hover:text-slate-900 transition">
+                    <i class="fa-solid fa-comments mr-1.5"></i>Chat
+                </button>
+                <button onclick="switchTab('code')" id="nav-code" class="nav-btn px-4 py-1.5 text-sm font-medium rounded-full text-slate-600 hover:text-slate-900 transition">
+                    <i class="fa-solid fa-code mr-1.5"></i>Code
+                </button>
+                <button onclick="switchTab('tools')" id="nav-tools" class="nav-btn px-4 py-1.5 text-sm font-medium rounded-full text-slate-600 hover:text-slate-900 transition">
+                    <i class="fa-solid fa-wrench mr-1.5"></i>Tools
+                </button>
+                <button onclick="switchTab('pricing')" id="nav-pricing" class="nav-btn px-4 py-1.5 text-sm font-medium rounded-full text-slate-600 hover:text-slate-900 transition">
+                    <i class="fa-solid fa-tag mr-1.5"></i>Pricing
+                </button>
+                <button onclick="switchTab('about')" id="nav-about" class="nav-btn px-4 py-1.5 text-sm font-medium rounded-full text-slate-600 hover:text-slate-900 transition">
+                    <i class="fa-solid fa-circle-info mr-1.5"></i>About
+                </button>
+                <button onclick="switchTab('help')" id="nav-help" class="nav-btn px-4 py-1.5 text-sm font-medium rounded-full text-slate-600 hover:text-slate-900 transition">
+                    <i class="fa-solid fa-circle-question mr-1.5"></i>Help
+                </button>
+            </nav>
+
+            <!-- Right Actions -->
+            <div class="flex items-center gap-2">
+                <!-- Global Search Trigger -->
+                <button onclick="toggleSearchModal()" class="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition" title="Search platform">
+                    <i class="fa-solid fa-magnifying-glass text-sm"></i>
+                </button>
+
+                <!-- PWA Install Button (Hidden by default, shown when installable) -->
+                <button id="pwaInstallBtn" onclick="installPwaApp()" class="hidden sm:flex items-center gap-1.5 bg-brand-lightorange text-brand-orange hover:bg-orange-100 border border-orange-200 text-xs font-semibold px-3 py-2 rounded-xl transition">
+                    <i class="fa-solid fa-download"></i>
+                    <span>Install App</span>
+                </button>
+
+                <!-- Get Started CTA -->
+                <button onclick="switchTab('chat')" class="bg-brand-blue hover:bg-brand-darkblue text-white text-sm font-semibold px-4 py-2 rounded-xl shadow-md hover:shadow-lg transition flex items-center gap-2">
+                    <span>Get Started</span>
+                    <i class="fa-solid fa-arrow-right text-xs"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN PAGE CONTAINERS (TAB VIEWS) -->
+    <main class="flex-grow pb-16 md:pb-6">
+
+        <!-- ========================================== -->
+        <!-- PAGE 1: HOME PAGE -->
+        <!-- ========================================== -->
+        <div id="page-home" class="page-view animate-fade-in">
+            <!-- Hero Section -->
+            <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-12">
+                <div class="bg-white rounded-3xl p-6 sm:p-10 border border-slate-200/80 shadow-xl relative overflow-hidden hero-glow">
+                    <!-- Background Subtle Gradients & Accents -->
+                    <div class="absolute -top-24 -right-24 w-96 h-96 bg-blue-100/60 rounded-full blur-3xl pointer-events-none"></div>
+                    <div class="absolute -bottom-24 -left-24 w-96 h-96 bg-orange-100/50 rounded-full blur-3xl pointer-events-none"></div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center relative z-10">
+                        
+                        <!-- Hero Left Content -->
+                        <div class="lg:col-span-7 space-y-6">
+                            <!-- Status Pill -->
+                            <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-lightblue text-brand-blue border border-blue-200/60 text-xs font-bold">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                                <span>Online • AI Assistant Ready</span>
+                            </div>
+
+                            <!-- Title -->
+                            <div class="space-y-2">
+                                <h1 class="text-4xl sm:text-5xl lg:text-6xl font-black text-slate-900 tracking-tight leading-none">
+                                    <span class="text-brand-blue">Chat</span><span class="text-brand-orange">Code</span>
+                                </h1>
+                                <p class="text-2xl sm:text-3xl font-extrabold text-slate-800 tracking-tight">
+                                    Chat, Plan, Code — All in One Place
+                                </p>
+                            </div>
+
+                            <p class="text-slate-600 text-base sm:text-lg max-w-xl font-normal leading-relaxed">
+                                Your smart AI assistant and online code editor to chat, write code, build projects, and turn ideas into working applications effortlessly.
+                            </p>
+
+                            <!-- Mini Feature Highlights -->
+                            <div class="grid grid-cols-3 gap-3 pt-2 max-w-lg">
+                                <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200/70 text-center">
+                                    <i class="fa-solid fa-bolt text-brand-orange text-lg mb-1"></i>
+                                    <div class="text-xs font-bold text-slate-800">AI Chat</div>
+                                    <div class="text-[10px] text-slate-500">Smart &amp; Fast</div>
+                                </div>
+                                <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200/70 text-center">
+                                    <i class="fa-solid fa-code text-brand-blue text-lg mb-1"></i>
+                                    <div class="text-xs font-bold text-slate-800">Code Editor</div>
+                                    <div class="text-[10px] text-slate-500">Write &amp; Run</div>
+                                </div>
+                                <div class="bg-slate-50 p-3 rounded-2xl border border-slate-200/70 text-center">
+                                    <i class="fa-solid fa-mobile-screen-button text-purple-600 text-lg mb-1"></i>
+                                    <div class="text-xs font-bold text-slate-800">PWA App</div>
+                                    <div class="text-[10px] text-slate-500">Install Anywhere</div>
+                                </div>
+                            </div>
+
+                            <!-- Call to Action Buttons -->
+                            <div class="flex flex-wrap items-center gap-4 pt-4">
+                                <button onclick="switchTab('chat')" class="bg-brand-blue hover:bg-brand-darkblue text-white font-bold px-7 py-3.5 rounded-2xl shadow-lg shadow-blue-500/30 hover:shadow-xl transition flex items-center gap-2 text-base">
+                                    <i class="fa-solid fa-comments"></i>
+                                    <span>Start Chat Free</span>
+                                    <i class="fa-solid fa-arrow-right text-sm"></i>
+                                </button>
+                                <button onclick="openDemoModal()" class="bg-white hover:bg-slate-50 text-slate-700 font-semibold px-6 py-3.5 rounded-2xl border border-slate-300 shadow-sm transition flex items-center gap-2 text-base">
+                                    <i class="fa-solid fa-circle-play text-brand-orange text-lg"></i>
+                                    <span>Watch Demo</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Hero Right Visual: Friendly Robot Mascot Art & Live Stats -->
+                        <div class="lg:col-span-5 flex flex-col items-center justify-center space-y-4">
+                            <!-- SVG Robot Mascot Artwork -->
+                            <div class="relative w-full max-w-sm aspect-square flex items-center justify-center">
+                                <div class="absolute inset-0 bg-gradient-to-tr from-brand-blue/10 to-brand-orange/20 rounded-full blur-2xl"></div>
+                                <svg viewBox="0 0 400 400" class="w-full h-full drop-shadow-2xl relative z-10">
+                                    <!-- Glow backdrop -->
+                                    <circle cx="200" cy="200" r="160" fill="#E8F0FF" />
+                                    <!-- Orbit Ring -->
+                                    <ellipse cx="200" cy="280" rx="150" ry="30" fill="none" stroke="#FF7A00" stroke-width="4" stroke-dasharray="10 10" />
+                                    
+                                    <!-- Robot Body -->
+                                    <rect x="130" y="210" width="140" height="110" rx="35" fill="#FFFFFF" stroke="#0D5CFF" stroke-width="6" />
+                                    <!-- Chest Screen -->
+                                    <rect x="155" y="235" width="90" height="60" rx="15" fill="#0F172A" />
+                                    <path d="M 175 265 L 185 275 L 215 255" stroke="#10B981" stroke-width="4" stroke-linecap="round" fill="none" />
+                                    <text x="175" y="280" font-family="monospace" font-size="10" fill="#38BDF8">&lt;code/&gt;</text>
+                                    
+                                    <!-- Robot Neck -->
+                                    <rect x="180" y="195" width="40" height="20" rx="6" fill="#94A3B8" />
+
+                                    <!-- Robot Head -->
+                                    <rect x="110" y="90" width="180" height="115" rx="45" fill="#FFFFFF" stroke="#0D5CFF" stroke-width="6" />
+                                    <!-- Visor / Face Screen -->
+                                    <rect x="130" y="110" width="140" height="75" rx="30" fill="#0039B3" />
+                                    
+                                    <!-- Friendly Glowing Blue Eyes -->
+                                    <ellipse cx="165" cy="145" rx="16" ry="20" fill="#38BDF8" />
+                                    <circle cx="170" cy="140" r="6" fill="#FFFFFF" />
+                                    <ellipse cx="235" cy="145" rx="16" ry="20" fill="#38BDF8" />
+                                    <circle cx="240" cy="140" r="6" fill="#FFFFFF" />
+                                    <!-- Happy Smile -->
+                                    <path d="M 185 165 Q 200 178 215 165" stroke="#38BDF8" stroke-width="4" stroke-linecap="round" fill="none" />
+
+                                    <!-- Headphones / Ears -->
+                                    <rect x="90" y="120" width="22" height="55" rx="10" fill="#FF7A00" />
+                                    <rect x="288" y="120" width="22" height="55" rx="10" fill="#FF7A00" />
+                                    <!-- Antenna -->
+                                    <line x1="200" y1="90" x2="200" y2="60" stroke="#0D5CFF" stroke-width="6" stroke-linecap="round"/>
+                                    <circle cx="200" cy="55" r="12" fill="#FF7A00" class="animate-bounce" />
+
+                                    <!-- Robot Hands -->
+                                    <circle cx="100" cy="245" r="18" fill="#0D5CFF" />
+                                    <circle cx="300" cy="245" r="18" fill="#FF7A00" />
+                                    
+                                    <!-- Code floating badges -->
+                                    <g class="animate-pulse">
+                                        <rect x="30" y="160" width="60" height="28" rx="8" fill="#FF7A00" />
+                                        <text x="40" y="178" font-family="sans-serif" font-weight="bold" font-size="11" fill="#FFFFFF">AI 🤖</text>
+                                    </g>
+                                    <g class="animate-pulse">
+                                        <rect x="310" y="140" width="70" height="28" rx="8" fill="#0D5CFF" />
+                                        <text x="320" y="158" font-family="sans-serif" font-weight="bold" font-size="11" fill="#FFFFFF">&lt;JS&gt; ⚡</text>
+                                    </g>
+                                </svg>
+                            </div>
+
+                            <!-- Product capability strip -->
+                            <div class="w-full bg-slate-900 text-white p-4 rounded-2xl shadow-lg border border-slate-800 grid grid-cols-3 gap-2 text-center">
+                                <div><div class="text-lg font-extrabold text-brand-orange"><i class="fa-solid fa-comments"></i></div><div class="text-[11px] text-slate-300 font-medium">AI Chat</div></div>
+                                <div class="border-x border-slate-700"><div class="text-lg font-extrabold text-emerald-400"><i class="fa-solid fa-folder-open"></i></div><div class="text-[11px] text-slate-300 font-medium">Project Review</div></div>
+                                <div><div class="text-lg font-extrabold text-yellow-400"><i class="fa-solid fa-code"></i></div><div class="text-[11px] text-slate-300 font-medium">Code Workspace</div></div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </section>
+
+            <!-- Features Grid Section -->
+            <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <div class="text-center max-w-2xl mx-auto mb-10">
+                    <h2 class="text-3xl font-extrabold text-slate-900">Everything You Need To Build Fast</h2>
+                    <p class="text-slate-600 mt-2">A unified workflow designed for developers, creators, and innovators.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <!-- Feature 1 -->
+                    <div onclick="switchTab('chat')" class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm card-glow cursor-pointer">
+                        <div class="w-12 h-12 rounded-xl bg-blue-50 text-brand-blue flex items-center justify-center text-xl font-bold mb-4">
+                            <i class="fa-solid fa-comments"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-900 mb-2">1. AI Conversation</h3>
+                        <p class="text-slate-600 text-sm leading-relaxed">Discuss ideas, ask questions, and brainstorm concepts in plain natural language.</p>
+                    </div>
+
+                    <!-- Feature 2 -->
+                    <div onclick="switchTab('chat')" class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm card-glow cursor-pointer">
+                        <div class="w-12 h-12 rounded-xl bg-orange-50 text-brand-orange flex items-center justify-center text-xl font-bold mb-4">
+                            <i class="fa-solid fa-diagram-project"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-900 mb-2">2. Smart Planning</h3>
+                        <p class="text-slate-600 text-sm leading-relaxed">Break down complex projects into actionable steps, file structures, and algorithms.</p>
+                    </div>
+
+                    <!-- Feature 3 -->
+                    <div onclick="switchTab('code')" class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm card-glow cursor-pointer">
+                        <div class="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center text-xl font-bold mb-4">
+                            <i class="fa-solid fa-code"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-900 mb-2">3. Online Workspace</h3>
+                        <p class="text-slate-600 text-sm leading-relaxed">Write HTML, CSS, and JS with live instant browser preview and one-click copy.</p>
+                    </div>
+
+                    <!-- Feature 4 -->
+                    <div onclick="switchTab('tools')" class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm card-glow cursor-pointer">
+                        <div class="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center text-xl font-bold mb-4">
+                            <i class="fa-solid fa-toolbox"></i>
+                        </div>
+                        <h3 class="text-lg font-bold text-slate-900 mb-2">4. Dev Utilities</h3>
+                        <p class="text-slate-600 text-sm leading-relaxed">JSON formatter, color converters, encoder tools, case changers and word counters.</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- PAGE 2: AI CHAT PAGE -->
+        <!-- ========================================== -->
+        <div id="page-chat" class="page-view hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="bg-white rounded-3xl border border-slate-200/80 shadow-xl overflow-hidden flex flex-col md:flex-row min-h-[75vh]">
+                
+                <!-- Chat History Sidebar -->
+                <div class="w-full md:w-72 bg-slate-50 border-r border-slate-200/80 p-4 flex flex-col justify-between">
+                    <div>
+                        <button onclick="startNewChat()" class="w-full bg-brand-blue hover:bg-brand-darkblue text-white font-semibold py-2.5 px-4 rounded-xl shadow transition flex items-center justify-center gap-2 text-sm mb-4">
+                            <i class="fa-solid fa-plus"></i>
+                            <span>New Conversation</span>
+                        </button>
+                        
+                        <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Workflow Steps</div>
+                        <div class="space-y-1 mb-6">
+                            <div class="flex items-center gap-2 text-xs font-medium text-slate-700 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+                                <span class="w-5 h-5 rounded-full bg-blue-100 text-brand-blue flex items-center justify-center text-[10px] font-bold">1</span>
+                                <span>Chat &amp; Discuss</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-xs font-medium text-slate-500 p-2 rounded-lg">
+                                <span class="w-5 h-5 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] font-bold">2</span>
+                                <span>Plan Architecture</span>
+                            </div>
+                            <div class="flex items-center gap-2 text-xs font-medium text-slate-500 p-2 rounded-lg">
+                                <span class="w-5 h-5 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[10px] font-bold">3</span>
+                                <span>Generate Code</span>
+                            </div>
+                        </div>
+
+                        <section class="mb-5 rounded-2xl border border-blue-200 bg-blue-50/70 p-3">
+                            <div class="flex items-center justify-between gap-2 mb-2">
+                                <div class="text-xs font-extrabold text-slate-800"><i class="fa-solid fa-folder-tree text-brand-blue mr-1"></i> Project Analyzer</div>
+                                <span class="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-1 rounded-full">ZIP</span>
+                            </div>
+                            <p class="text-[11px] leading-relaxed text-slate-600 mb-3">Upload a GitHub repository ZIP to inspect its file structure and prepare a detailed review request.</p>
+                            <input id="projectZipInput" type="file" accept=".zip,application/zip" class="hidden" onchange="inspectProjectZip(event)">
+                            <button type="button" onclick="document.getElementById('projectZipInput').click()" class="w-full bg-white hover:bg-blue-50 border border-blue-200 text-brand-blue text-xs font-bold py-2 rounded-xl transition"><i class="fa-solid fa-cloud-arrow-up mr-1"></i> Upload Project ZIP</button>
+                            <div id="projectZipStatus" class="text-[10px] text-slate-500 mt-2" aria-live="polite">No project uploaded yet.</div>
+                            <div id="projectZipDetails" class="hidden mt-2 text-[10px] text-slate-600 space-y-1"></div>
+                            <button id="projectPromptBtn" type="button" onclick="copyProjectReviewPrompt()" class="hidden w-full mt-2 bg-brand-blue hover:bg-brand-darkblue text-white text-xs font-bold py-2 rounded-xl"><i class="fa-regular fa-copy mr-1"></i> Copy Review Prompt</button>
+                        </section>
+
+                        <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Recent Chats</div>
+                        <div id="chatHistoryList" class="space-y-1.5 max-h-48 md:max-h-64 overflow-y-auto">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="pt-4 border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-500">
+                        <button onclick="clearChatHistory()" class="hover:text-red-600 transition flex items-center gap-1">
+                            <i class="fa-solid fa-trash"></i> Clear History
+                        </button>
+                        <span class="text-[10px] bg-slate-200 px-2 py-0.5 rounded-full">v1.1</span>
+                    </div>
+                </div>
+
+                <!-- Main Chat Interface -->
+                <div class="flex-grow flex flex-col bg-white">
+                    <!-- Chat Header -->
+                    <div class="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                        <div class="flex items-center gap-3">
+                            <div class="w-9 h-9 rounded-full bg-brand-blue text-white flex items-center justify-center font-bold text-sm shadow">
+                                <i class="fa-solid fa-robot"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-slate-900 text-sm">ChatCode Assistant</h3>
+                                <p class="text-[11px] text-slate-500">Ask anything, generate plans, build apps</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="switchTab('code')" class="text-xs bg-brand-lightorange text-brand-orange hover:bg-orange-100 font-semibold px-3 py-1.5 rounded-lg border border-orange-200 transition flex items-center gap-1">
+                                <i class="fa-solid fa-code"></i> Workspace
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="px-4 py-3 bg-blue-50/60 border-b border-blue-100 flex flex-wrap items-center justify-between gap-2">
+                        <div class="text-[11px] text-slate-600"><i class="fa-solid fa-list-check text-brand-blue mr-1"></i><strong>Work step:</strong> Discuss → Plan → Approve → Build</div>
+                        <button type="button" onclick="copyBuildWorkflowPrompt()" class="text-[11px] font-bold text-brand-blue hover:underline"><i class="fa-regular fa-copy mr-1"></i> Copy workflow prompt</button>
+                    </div>
+
+                    <!-- Chat Messages Stream -->
+                    <div id="chatMessages" class="flex-grow p-4 sm:p-6 overflow-y-auto space-y-4 max-h-[500px]">
+                        <!-- Welcome Message -->
+                        <div class="flex gap-3">
+                            <div class="w-8 h-8 rounded-full bg-brand-blue text-white flex-shrink-0 flex items-center justify-center text-xs font-bold">
+                                AI
+                            </div>
+                            <div class="bg-slate-100 rounded-2xl rounded-tl-none p-4 max-w-2xl text-slate-800 text-sm space-y-2 shadow-sm">
+                                <p class="font-semibold text-brand-blue">Hello! 👋 Welcome to ChatCode.</p>
+                                <p>I am your smart coding assistant. Tell me about your project idea or ask a question. We can chat first, plan the structure, and then create the code for your workspace!</p>
+                                <div class="flex flex-wrap gap-2 pt-2">
+                                    <button onclick="sendQuickPrompt('Help me plan a Todo Web App in HTML/JS')" class="bg-white hover:bg-slate-50 text-slate-700 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 transition font-medium">💡 Plan a Todo App</button>
+                                    <button onclick="sendQuickPrompt('Create a responsive landing page section')" class="bg-white hover:bg-slate-50 text-slate-700 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 transition font-medium">🎨 Landing Page Component</button>
+                                    <button onclick="sendQuickPrompt('Explain how JS async/await works with example')" class="bg-white hover:bg-slate-50 text-slate-700 text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 transition font-medium">📚 Explain Async/Await</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Input Box -->
+                    <div class="p-4 border-t border-slate-100 bg-white">
+                        <form id="chatForm" onsubmit="handleChatSubmit(event)" class="space-y-2">
+                            <div class="relative flex items-center bg-slate-100 rounded-2xl border border-slate-200 focus-within:border-brand-blue focus-within:ring-2 focus-within:ring-blue-100 transition p-2">
+                                <!-- File Upload Trigger -->
+                                <button type="button" onclick="triggerFileUpload()" class="p-2 text-slate-400 hover:text-slate-600 transition" title="Attach file">
+                                    <i class="fa-solid fa-paperclip"></i>
+                                </button>
+                                <input type="file" id="chatFileInput" class="hidden" onchange="handleFileSelected(event)">
+
+                                <!-- Text Input -->
+                                <input type="text" id="chatInput" placeholder="Type your message or project idea..." class="w-full bg-transparent px-2 py-1 text-sm text-slate-800 focus:outline-none" autocomplete="off">
+
+                                <!-- Mic Voice Toggle -->
+                                <button type="button" onclick="toggleVoiceMic()" id="micBtn" class="p-2 text-slate-400 hover:text-slate-600 transition" title="Voice input">
+                                    <i class="fa-solid fa-microphone"></i>
+                                </button>
+
+                                <!-- Send Button -->
+                                <button type="submit" class="bg-brand-blue hover:bg-brand-darkblue text-white w-9 h-9 rounded-xl flex items-center justify-center shadow transition flex-shrink-0 ml-1">
+                                    <i class="fa-solid fa-paper-plane text-xs"></i>
+                                </button>
+                            </div>
+                            <div class="flex items-center justify-between text-[11px] text-slate-400 px-2">
+                                <span>Frontend preview mode · AI connection will be enabled by the secure backend</span>
+                                <span id="fileStatus" class="text-brand-orange font-medium"></span>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- PAGE 3: CODE WORKSPACE PAGE -->
+        <!-- ========================================== -->
+        <div id="page-code" class="page-view hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="bg-slate-900 rounded-3xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col min-h-[80vh]">
+                
+                <!-- Workspace Header Controls -->
+                <div class="bg-slate-950 p-3 px-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                    <!-- File Tabs -->
+                    <div class="flex items-center gap-1 overflow-x-auto">
+                        <button onclick="selectCodeTab('html')" id="tab-btn-html" class="code-tab-btn bg-slate-800 text-brand-orange px-4 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 border border-slate-700">
+                            <i class="fa-brands fa-html5"></i> index.html
+                        </button>
+                        <button onclick="selectCodeTab('css')" id="tab-btn-css" class="code-tab-btn bg-transparent text-slate-400 hover:text-slate-200 px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2">
+                            <i class="fa-brands fa-css3-alt text-blue-400"></i> style.css
+                        </button>
+                        <button onclick="selectCodeTab('js')" id="tab-btn-js" class="code-tab-btn bg-transparent text-slate-400 hover:text-slate-200 px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2">
+                            <i class="fa-brands fa-js text-yellow-400"></i> script.js
+                        </button>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex items-center gap-2">
+                        <button onclick="runCodePreview()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-1.5 rounded-lg text-xs shadow flex items-center gap-1.5 transition">
+                            <i class="fa-solid fa-play text-[10px]"></i> Run Code
+                        </button>
+                        <button onclick="copyCurrentCode()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-3 py-1.5 rounded-lg text-xs border border-slate-700 transition flex items-center gap-1">
+                            <i class="fa-regular fa-copy"></i> Copy
+                        </button>
+                        <button onclick="downloadCodeFiles()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold px-3 py-1.5 rounded-lg text-xs border border-slate-700 transition flex items-center gap-1">
+                            <i class="fa-solid fa-download"></i> Export
+                        </button>
+                        <button onclick="clearCodeEditors()" class="bg-slate-800 hover:bg-red-900/50 text-red-300 font-semibold px-3 py-1.5 rounded-lg text-xs border border-slate-700 transition" title="Clear Editor">
+                            <i class="fa-solid fa-trash-can"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Editor + Live Preview Split Layout -->
+                <div class="flex-grow grid grid-cols-1 lg:grid-cols-2">
+                    <!-- Code Textarea Panel -->
+                    <div class="flex flex-col bg-slate-900 border-r border-slate-800 relative">
+                        <!-- HTML Editor -->
+                        <textarea id="code-html" oninput="updateLineNumbers()" class="code-editor-area w-full flex-grow bg-slate-900 text-slate-100 code-font p-4 text-xs sm:text-sm focus:outline-none resize-none leading-relaxed" spellcheck="false" placeholder="<!-- Write your HTML code here -->">
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ChatCode Preview</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 40px; background: #f8fafc; }
+    .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); max-width: 400px; margin: 0 auto; }
+    h1 { color: #0D5CFF; margin-bottom: 8px; }
+    p { color: #64748b; font-size: 14px; }
+    button { background: #FF7A00; color: white; border: none; padding: 10px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 15px; }
+    button:hover { opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Hello ChatCode! 🚀</h1>
+    <p>Your interactive live code workspace is ready.</p>
+    <button onclick="clickMe()">Test Interactive JS</button>
+    <p id="msg" style="margin-top:15px; font-weight:bold; color:#0D5CFF;"></p>
+  </div>
+  <script>
+    function clickMe() {
+      document.getElementById('msg').innerText = '✨ Code Executed Successfully!';
+    }
+  </script>
+</body>
+</html></textarea>
+
+                        <!-- CSS Editor (Hidden initially) -->
+                        <textarea id="code-css" class="code-editor-area hidden w-full flex-grow bg-slate-900 text-slate-100 code-font p-4 text-xs sm:text-sm focus:outline-none resize-none leading-relaxed" spellcheck="false" placeholder="/* Custom CSS styles */">
+/* Additional CSS styles */
+body {
+    background-color: #f8fafc;
+}
+</textarea>
+
+                        <!-- JS Editor (Hidden initially) -->
+                        <textarea id="code-js" class="code-editor-area hidden w-full flex-grow bg-slate-900 text-slate-100 code-font p-4 text-xs sm:text-sm focus:outline-none resize-none leading-relaxed" spellcheck="false" placeholder="// Custom JavaScript logic">
+// JavaScript logic
+console.log("ChatCode Workspace Ready");
+</textarea>
+                    </div>
+
+                    <!-- Live Sandbox Preview Frame -->
+                    <div class="bg-white flex flex-col min-h-[350px]">
+                        <div class="bg-slate-100 px-4 py-2 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600">
+                            <span class="font-semibold flex items-center gap-1.5">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500"></span> Live Browser Sandbox Preview
+                            </span>
+                            <button onclick="runCodePreview()" class="text-brand-blue hover:underline font-bold">Refresh <i class="fa-solid fa-rotate-right"></i></button>
+                        </div>
+                        <iframe id="codePreviewFrame" class="w-full flex-grow border-none bg-white"></iframe>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- PAGE 4: DEVELOPER TOOLS PAGE -->
+        <!-- ========================================== -->
+        <div id="page-tools" class="page-view hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+            <div class="text-center max-w-2xl mx-auto mb-6">
+                <h2 class="text-3xl font-extrabold text-slate-900">Developer Utilities</h2>
+                <p class="text-slate-600 mt-1">Fast, essential browser-side tools for everyday coding tasks.</p>
+            </div>
+
+            <!-- Tools Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+                <!-- Tool 1: JSON Formatter & Validator -->
+                <div class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-md space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-blue-50 text-brand-blue flex items-center justify-center font-bold">
+                            <i class="fa-solid fa-code text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-900 text-base">JSON Formatter</h3>
+                            <p class="text-xs text-slate-500">Format, minify &amp; validate JSON strings</p>
+                        </div>
+                    </div>
+                    <textarea id="toolJsonInput" rows="4" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs code-font focus:outline-none focus:border-brand-blue" placeholder='{"name": "ChatCode", "status": "active"}'></textarea>
+                    <div class="flex flex-wrap gap-2">
+                        <button onclick="formatJson()" class="bg-brand-blue text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow hover:bg-brand-darkblue transition">Format</button>
+                        <button onclick="minifyJson()" class="bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-300 transition">Minify</button>
+                        <button onclick="copyToolOutput('toolJsonInput')" class="bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-200 transition">Copy</button>
+                    </div>
+                </div>
+
+                <!-- Tool 2: Color Picker & Converter -->
+                <div class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-md space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-orange-50 text-brand-orange flex items-center justify-center font-bold">
+                            <i class="fa-solid fa-palette text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-900 text-base">Color Picker &amp; Converter</h3>
+                            <p class="text-xs text-slate-500">Convert between HEX, RGB, and HSL</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <input type="color" id="toolColorInput" value="#0D5CFF" oninput="updateColorTool()" class="w-12 h-12 rounded-xl cursor-pointer border-none bg-transparent">
+                        <div class="flex-grow space-y-1">
+                            <div class="text-xs text-slate-600 font-semibold" id="colorHex">HEX: #0D5CFF</div>
+                            <div class="text-xs text-slate-500" id="colorRgb">RGB: rgb(13, 92, 255)</div>
+                        </div>
+                    </div>
+                    <button onclick="copyToolText('colorHex')" class="w-full bg-slate-100 text-slate-700 py-2 rounded-xl text-xs font-semibold hover:bg-slate-200 transition">Copy HEX Code</button>
+                </div>
+
+                <!-- Tool 3: Text Case Converter -->
+                <div class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-md space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                            <i class="fa-solid fa-[#0D5CFF] fa-font text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-900 text-base">Case Converter</h3>
+                            <p class="text-xs text-slate-500">Convert UPPERCASE, camelCase, etc.</p>
+                        </div>
+                    </div>
+                    <input type="text" id="toolCaseInput" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs focus:outline-none focus:border-brand-blue" placeholder="Type or paste text here...">
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="convertCase('upper')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 py-1.5 rounded-lg text-xs font-medium">UPPERCASE</button>
+                        <button onclick="convertCase('lower')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 py-1.5 rounded-lg text-xs font-medium">lowercase</button>
+                        <button onclick="convertCase('camel')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 py-1.5 rounded-lg text-xs font-medium">camelCase</button>
+                        <button onclick="convertCase('kebab')" class="bg-slate-100 hover:bg-slate-200 text-slate-700 py-1.5 rounded-lg text-xs font-medium">kebab-case</button>
+                    </div>
+                </div>
+
+                <!-- Tool 4: URL Encoder & Decoder -->
+                <div class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-md space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                            <i class="fa-solid fa-link text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-900 text-base">URL Encoder / Decoder</h3>
+                            <p class="text-xs text-slate-500">Safely encode special URL characters</p>
+                        </div>
+                    </div>
+                    <textarea id="toolUrlInput" rows="3" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs focus:outline-none focus:border-brand-blue" placeholder="https://chatcode.app/search?query=hello world"></textarea>
+                    <div class="flex gap-2">
+                        <button onclick="encodeUrl()" class="bg-brand-blue text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow hover:bg-brand-darkblue transition">Encode</button>
+                        <button onclick="decodeUrl()" class="bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-300 transition">Decode</button>
+                    </div>
+                </div>
+
+                <!-- Tool 5: Word & Character Counter -->
+                <div class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-md space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                            <i class="fa-solid fa-[#0D5CFF] fa-calculator text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-900 text-base">Word Counter</h3>
+                            <p class="text-xs text-slate-500">Live stats &amp; reading time estimator</p>
+                        </div>
+                    </div>
+                    <textarea id="toolWordInput" oninput="calculateWordStats()" rows="3" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs focus:outline-none focus:border-brand-blue" placeholder="Start typing or paste text..."></textarea>
+                    <div class="flex justify-around text-center bg-slate-50 p-2 rounded-xl border border-slate-200 text-xs">
+                        <div><span id="statWords" class="font-bold text-brand-blue">0</span> <span class="text-slate-500">Words</span></div>
+                        <div><span id="statChars" class="font-bold text-brand-orange">0</span> <span class="text-slate-500">Chars</span></div>
+                        <div><span id="statTime" class="font-bold text-emerald-600">0s</span> <span class="text-slate-500">Read</span></div>
+                    </div>
+                </div>
+
+                <!-- Tool 6: Base64 Encoder / Decoder -->
+                <div class="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-md space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+                            <i class="fa-solid fa-lock text-lg"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-bold text-slate-900 text-base">Base64 Converter</h3>
+                            <p class="text-xs text-slate-500">Encode or decode Base64 strings</p>
+                        </div>
+                    </div>
+                    <textarea id="toolBase64Input" rows="3" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs code-font focus:outline-none focus:border-brand-blue" placeholder="Enter text or string..."></textarea>
+                    <div class="flex gap-2">
+                        <button onclick="encodeBase64()" class="bg-brand-blue text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow hover:bg-brand-darkblue transition">Encode</button>
+                        <button onclick="decodeBase64()" class="bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-slate-300 transition">Decode</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- PAGE 5: PRICING PAGE -->
+        <!-- ========================================== -->
+        <div id="page-pricing" class="page-view hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+            <div class="text-center max-w-2xl mx-auto">
+                <h2 class="text-3xl font-extrabold text-slate-900">Simple, Transparent Pricing</h2>
+                <p class="text-slate-600 mt-2">Start free today. Upgrade when you need more power and speed.</p>
+                
+                <!-- Monthly / Yearly Billing Toggle -->
+                <div class="mt-6 inline-flex items-center bg-slate-200/80 p-1 rounded-full text-xs font-bold">
+                    <button id="btn-monthly" onclick="toggleBilling('monthly')" class="px-4 py-2 rounded-full bg-white text-slate-900 shadow-sm transition">Monthly Billing</button>
+                    <button id="btn-yearly" onclick="toggleBilling('yearly')" class="px-4 py-2 rounded-full text-slate-600 hover:text-slate-900 transition flex items-center gap-1">
+                        <span>Yearly Billing</span>
+                        <span class="bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded-full uppercase">Save 20%</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Pricing Cards Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+                
+                <!-- Free Plan -->
+                <div class="bg-white rounded-3xl p-8 border border-slate-200 shadow-md space-y-6 relative flex flex-col justify-between">
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-900">Free Tier</h3>
+                        <p class="text-slate-500 text-xs mt-1">Perfect for getting started and exploring features.</p>
+                        <div class="my-6">
+                            <span class="text-4xl font-extrabold text-slate-900">$0</span>
+                            <span class="text-slate-500 text-sm">/ forever</span>
+                        </div>
+                        <ul class="space-y-3 text-sm text-slate-600">
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500"></i> Standard AI Assistant Access</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500"></i> Full Code Workspace &amp; Live Preview</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500"></i> All Developer Utilities</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-emerald-500"></i> PWA Mobile App Support</li>
+                        </ul>
+                    </div>
+                    <button onclick="switchTab('chat')" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-3 rounded-xl transition text-sm">
+                        Get Started Free
+                    </button>
+                </div>
+
+                <!-- Pro Plan (Popular Highlight) -->
+                <div class="bg-white rounded-3xl p-8 border-2 border-brand-blue shadow-2xl space-y-6 relative flex flex-col justify-between scale-105">
+                    <div class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-brand-orange text-white text-[11px] font-black tracking-wider uppercase px-3 py-1 rounded-full shadow">
+                        Most Popular
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-900">Pro Plan</h3>
+                        <p class="text-slate-500 text-xs mt-1">For active developers and power creators.</p>
+                        <div class="my-6">
+                            <span id="price-pro" class="text-4xl font-extrabold text-slate-900">$9.99</span>
+                            <span class="text-slate-500 text-sm">/ month</span>
+                        </div>
+                        <ul class="space-y-3 text-sm text-slate-600">
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-brand-blue"></i> Priority High-Speed AI Processing</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-brand-blue"></i> Unlimited Code Workspace Runs</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-brand-blue"></i> One-Click Project Export (.ZIP)</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-brand-blue"></i> 24/7 Priority Support</li>
+                        </ul>
+                    </div>
+                    <button onclick="openPaymentModal('Pro Plan', '$9.99')" class="w-full bg-brand-blue hover:bg-brand-darkblue text-white font-bold py-3 rounded-xl shadow-lg transition text-sm">
+                        Upgrade to Pro
+                    </button>
+                </div>
+
+                <!-- Team Plan -->
+                <div class="bg-white rounded-3xl p-8 border border-slate-200 shadow-md space-y-6 relative flex flex-col justify-between">
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-900">Team Plan</h3>
+                        <p class="text-slate-500 text-xs mt-1">Collaborative workspace for small teams.</p>
+                        <div class="my-6">
+                            <span id="price-team" class="text-4xl font-extrabold text-slate-900">$29.99</span>
+                            <span class="text-slate-500 text-sm">/ month</span>
+                        </div>
+                        <ul class="space-y-3 text-sm text-slate-600">
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-600"></i> Up to 5 Team Members</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-600"></i> Dedicated API Keys &amp; Storage</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-600"></i> Shared Code Snippets Workspace</li>
+                            <li class="flex items-center gap-2"><i class="fa-solid fa-check text-purple-600"></i> Custom AI Prompt Instructions</li>
+                        </ul>
+                    </div>
+                    <button onclick="openPaymentModal('Team Plan', '$29.99')" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-xl transition text-sm">
+                        Contact Sales
+                    </button>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- PAGE 6: ABOUT PAGE -->
+        <!-- ========================================== -->
+        <div id="page-about" class="page-view hidden max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10">
+            <div class="bg-white rounded-3xl p-8 sm:p-12 border border-slate-200 shadow-xl space-y-8">
+                <!-- Header -->
+                <div class="text-center max-w-2xl mx-auto space-y-3">
+                    <h2 class="text-3xl font-extrabold text-slate-900">About ChatCode</h2>
+                    <p class="text-brand-blue font-semibold text-sm">Flow Together, Code Better</p>
+                    <p class="text-slate-600 leading-relaxed text-sm">We are building an intuitive platform where developers, students, and creators can seamlessly move from conversational brainstorming to structured project planning, and straight into code execution.</p>
+                </div>
+
+                <!-- Mission Pillars -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+                    <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200/80 text-center space-y-2">
+                        <i class="fa-solid fa-heart-pulse text-brand-orange text-2xl mb-1"></i>
+                        <h4 class="font-bold text-slate-900">Built for Developers</h4>
+                        <p class="text-slate-500 text-xs">Designed for maximum reliability and smooth daily workflows.</p>
+                    </div>
+                    <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200/80 text-center space-y-2">
+                        <i class="fa-solid fa-bolt text-brand-blue text-2xl mb-1"></i>
+                        <h4 class="font-bold text-slate-900">Innovative Tools</h4>
+                        <p class="text-slate-500 text-xs">Combining dynamic AI conversations with browser-side code compilation.</p>
+                    </div>
+                    <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200/80 text-center space-y-2">
+                        <i class="fa-solid fa-shield-halved text-emerald-600 text-2xl mb-1"></i>
+                        <h4 class="font-bold text-slate-900">Secure &amp; Private</h4>
+                        <p class="text-slate-500 text-xs">Your data and code remain in your control with client-side execution.</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- PAGE 7: HELP PAGE -->
+        <!-- ========================================== -->
+        <div id="page-help" class="page-view hidden max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+            <div class="text-center max-w-2xl mx-auto">
+                <h2 class="text-3xl font-extrabold text-slate-900">Need Help?</h2>
+                <p class="text-slate-600 mt-1">Find answers to common questions or reach out to our support team.</p>
+            </div>
+
+            <!-- FAQ Accordion Section -->
+            <div class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-md space-y-4">
+                <h3 class="font-bold text-slate-900 text-lg mb-4 flex items-center gap-2">
+                    <i class="fa-solid fa-circle-question text-brand-blue"></i> Frequently Asked Questions
+                </h3>
+                
+                <div class="space-y-3">
+                    <details class="group bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
+                        <summary class="font-semibold text-slate-800 cursor-pointer flex justify-between items-center text-sm">
+                            <span>How do I transfer code from AI Chat to the Workspace?</span>
+                            <span class="text-slate-400 group-open:rotate-180 transition"><i class="fa-solid fa-chevron-down"></i></span>
+                        </summary>
+                        <p class="text-slate-600 text-xs mt-3 leading-relaxed">
+                            When AI generates code in the chat, click the "Send to Workspace" button on the code block. It will automatically load directly into the Code Editor tab for instant editing and live preview.
+                        </p>
+                    </details>
+
+                    <details class="group bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
+                        <summary class="font-semibold text-slate-800 cursor-pointer flex justify-between items-center text-sm">
+                            <span>Is ChatCode usable offline as a PWA?</span>
+                            <span class="text-slate-400 group-open:rotate-180 transition"><i class="fa-solid fa-chevron-down"></i></span>
+                        </summary>
+                        <p class="text-slate-600 text-xs mt-3 leading-relaxed">
+                            Install availability depends on the deployed site having a valid web app manifest and service worker. The install button appears only when the browser supports installation.
+                        </p>
+                    </details>
+
+                    <details class="group bg-slate-50 p-4 rounded-2xl border border-slate-200/80">
+                        <summary class="font-semibold text-slate-800 cursor-pointer flex justify-between items-center text-sm">
+                            <span>How is my code executed safely?</span>
+                            <span class="text-slate-400 group-open:rotate-180 transition"><i class="fa-solid fa-chevron-down"></i></span>
+                        </summary>
+                        <p class="text-slate-600 text-xs mt-3 leading-relaxed">
+                            All code previews are rendered inside a sandboxed HTML iframe right in your browser. No sensitive user data is sent to external execution servers.
+                        </p>
+                    </details>
+                </div>
+            </div>
+
+            <!-- Contact Support Form -->
+            <div class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-md space-y-4">
+                <h3 class="font-bold text-slate-900 text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-envelope text-brand-orange"></i> Contact Support
+                </h3>
+                <form onsubmit="handleSupportSubmit(event)" class="space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Your Name</label>
+                            <input type="text" required class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:border-brand-blue" placeholder="Alex Johnson">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Email Address</label>
+                            <input type="email" required class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:border-brand-blue" placeholder="alex@example.com">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 mb-1">Message</label>
+                        <textarea rows="3" required class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs focus:outline-none focus:border-brand-blue" placeholder="How can we help you?"></textarea>
+                    </div>
+                    <button type="submit" class="bg-brand-blue hover:bg-brand-darkblue text-white font-semibold px-6 py-2.5 rounded-xl text-xs shadow transition">
+                        Send Message
+                    </button>
+                </form>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- FOOTER SECTION -->
+    <footer class="bg-slate-900 text-slate-400 text-xs border-t border-slate-800 py-10 mt-auto">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+                <!-- Branding -->
+                <div class="space-y-3">
+                    <div class="flex items-center gap-2 text-white font-extrabold text-lg">
+                        <span class="text-brand-blue">Chat</span><span class="text-brand-orange">Code</span>
+                    </div>
+                    <p class="text-slate-400 leading-relaxed text-xs">
+                        Flow Together, Code Better. Smart AI chat assistant combined with live web workspace.
+                    </p>
+                </div>
+
+                <!-- Navigation Quick Links -->
+                <div>
+                    <h4 class="text-white font-bold mb-3">Platform</h4>
+                    <ul class="space-y-2">
+                        <li><button onclick="switchTab('home')" class="hover:text-white transition">Home</button></li>
+                        <li><button onclick="switchTab('chat')" class="hover:text-white transition">AI Chat</button></li>
+                        <li><button onclick="switchTab('code')" class="hover:text-white transition">Code Workspace</button></li>
+                        <li><button onclick="switchTab('tools')" class="hover:text-white transition">Developer Tools</button></li>
+                    </ul>
+                </div>
+
+                <!-- Resources -->
+                <div>
+                    <h4 class="text-white font-bold mb-3">Resources</h4>
+                    <ul class="space-y-2">
+                        <li><button onclick="switchTab('pricing')" class="hover:text-white transition">Pricing Plans</button></li>
+                        <li><button onclick="switchTab('about')" class="hover:text-white transition">About Us</button></li>
+                        <li><button onclick="switchTab('help')" class="hover:text-white transition">Help &amp; FAQ</button></li>
+                        <li><button onclick="openDemoModal()" class="hover:text-white transition">Watch Video Demo</button></li>
+                    </ul>
+                </div>
+
+                <!-- Community & Goal -->
+                <div class="space-y-3">
+                    <h4 class="text-white font-bold">Project Goal</h4>
+                    <p class="text-slate-400">Build, learn, and create with ChatCode.</p>
+                    <div class="flex items-center gap-3 text-base text-slate-400 pt-2">
+                        <a href="#" class="hover:text-brand-blue transition"><i class="fa-brands fa-twitter"></i></a>
+                        <a href="#" class="hover:text-brand-orange transition"><i class="fa-brands fa-github"></i></a>
+                        <a href="#" class="hover:text-blue-500 transition"><i class="fa-brands fa-discord"></i></a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-6 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+                <p>&copy; 2026 ChatCode Platform. All rights reserved.</p>
+                <div class="flex gap-4">
+                    <a href="#" onclick="switchTab('help')" class="hover:text-white">Privacy Policy</a>
+                    <a href="#" onclick="switchTab('help')" class="hover:text-white">Terms of Service</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- MOBILE BOTTOM NAVIGATION BAR -->
+    <div class="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-50 py-2 px-3 flex items-center justify-around text-slate-600">
+        <button onclick="switchTab('home')" class="mobile-nav-item flex flex-col items-center gap-0.5 text-xs text-brand-blue">
+            <i class="fa-solid fa-house text-base"></i>
+            <span class="text-[10px] font-medium">Home</span>
+        </button>
+        <button onclick="switchTab('chat')" class="mobile-nav-item flex flex-col items-center gap-0.5 text-xs">
+            <i class="fa-solid fa-comments text-base"></i>
+            <span class="text-[10px] font-medium">Chat</span>
+        </button>
+        <button onclick="switchTab('code')" class="mobile-nav-item flex flex-col items-center gap-0.5 text-xs">
+            <i class="fa-solid fa-code text-base"></i>
+            <span class="text-[10px] font-medium">Code</span>
+        </button>
+        <button onclick="switchTab('tools')" class="mobile-nav-item flex flex-col items-center gap-0.5 text-xs">
+            <i class="fa-solid fa-wrench text-base"></i>
+            <span class="text-[10px] font-medium">Tools</span>
+        </button>
+        <button onclick="switchTab('help')" class="mobile-nav-item flex flex-col items-center gap-0.5 text-xs">
+            <i class="fa-solid fa-circle-question text-base"></i>
+            <span class="text-[10px] font-medium">Help</span>
+        </button>
+    </div>
+
+    <!-- MODAL 1: WATCH DEMO MODAL -->
+    <div id="demoModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl relative">
+            <button onclick="closeDemoModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600 text-lg">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <h3 class="text-xl font-bold text-slate-900 flex items-center gap-2">
+                <i class="fa-solid fa-circle-play text-brand-orange"></i> ChatCode Demo Overview
+            </h3>
+            <div class="bg-slate-900 text-white rounded-2xl p-6 text-center space-y-4">
+                <div class="w-16 h-16 rounded-full bg-brand-blue/20 text-brand-blue mx-auto flex items-center justify-center text-2xl animate-pulse">
+                    <i class="fa-solid fa-play"></i>
+                </div>
+                <h4 class="font-bold text-lg">Chat &rarr; Plan &rarr; Code &rarr; Build</h4>
+                <p class="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                    ChatCode allows developers to talk naturally with an AI, formulate step-by-step project plans, and push code instantly to an interactive live browser sandbox.
+                </p>
+            </div>
+            <button onclick="closeDemoModal(); switchTab('chat');" class="w-full bg-brand-blue text-white font-bold py-3 rounded-xl hover:bg-brand-darkblue transition text-sm">
+                Try AI Chat Now
+            </button>
+        </div>
+    </div>
+
+    <!-- MODAL 2: GLOBAL SEARCH MODAL -->
+    <div id="searchModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative">
+            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 class="font-bold text-slate-900 text-base">Search ChatCode</h3>
+                <button onclick="toggleSearchModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <input type="text" oninput="handleSearchQuery(this.value)" placeholder="Search tools, pricing, help articles..." class="w-full bg-slate-100 border border-slate-200 rounded-xl p-3 text-sm focus:outline-none focus:border-brand-blue">
+            <div id="searchResults" class="space-y-2 max-h-48 overflow-y-auto text-xs text-slate-600">
+                <div class="p-2 hover:bg-slate-50 rounded-lg cursor-pointer" onclick="toggleSearchModal(); switchTab('tools')">🔧 Developer Tools (JSON, Color Picker)</div>
+                <div class="p-2 hover:bg-slate-50 rounded-lg cursor-pointer" onclick="toggleSearchModal(); switchTab('pricing')">💳 Pricing Plans (Free vs Pro)</div>
+                <div class="p-2 hover:bg-slate-50 rounded-lg cursor-pointer" onclick="toggleSearchModal(); switchTab('help')">❓ Frequently Asked Questions</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 3: PAYMENT DISCLAIMER MODAL -->
+    <div id="paymentModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl relative text-center">
+            <div class="w-12 h-12 rounded-full bg-orange-100 text-brand-orange mx-auto flex items-center justify-center text-xl font-bold">
+                <i class="fa-solid fa-credit-card"></i>
+            </div>
+            <h3 class="text-lg font-bold text-slate-900" id="paymentPlanTitle">Upgrade Plan</h3>
+            <p class="text-xs text-slate-600 leading-relaxed">
+                Payment processing will be activated upon live merchant integration. Click below to register interest for early access.
+            </p>
+            <div class="flex gap-2">
+                <button onclick="closePaymentModal()" class="flex-grow bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 rounded-xl text-xs">Close</button>
+                <button onclick="confirmPaymentInterest()" class="flex-grow bg-brand-blue hover:bg-brand-darkblue text-white font-bold py-2.5 rounded-xl text-xs">Notify Me</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST NOTIFICATION CONTAINER -->
+    <div id="toast" class="fixed bottom-20 right-4 z-50 bg-slate-900 text-white text-xs font-semibold px-4 py-3 rounded-xl shadow-2xl opacity-0 pointer-events-none transition-all flex items-center gap-2">
+        <i class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span id="toastMsg">Action completed!</span>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // Global App State
+        let currentTab = 'home';
+        let isVoiceActive = false;
+        let selectedFile = null;
+
+        // Code Editor State
+        let codeData = {
+            html: `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 40px; background: #f8fafc; }
+    .card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); max-width: 400px; margin: 0 auto; }
+    h1 { color: #0D5CFF; }
+    button { background: #FF7A00; color: white; border: none; padding: 10px 20px; border-radius: 10px; font-weight: bold; cursor: pointer; margin-top: 15px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Hello ChatCode! 🚀</h1>
+    <p>Your live code workspace is ready.</p>
+    <button onclick="clickMe()">Test Interactive JS</button>
+    <p id="msg" style="margin-top:15px; font-weight:bold; color:#0D5CFF;"></p>
+  </div>
+  <script>
+    function clickMe() {
+      document.getElementById('msg').innerText = '✨ Code Executed Successfully!';
+    }
+  <\/script>
+</body>
+</html>`,
+            css: `/* Custom CSS */\nbody {\n    background-color: #f8fafc;\n}`,
+            js: `// Custom JavaScript\nconsole.log("ChatCode Ready!");`
+        };
+
+        // Navigation Switching Function
+        function switchTab(tabId) {
+            currentTab = tabId;
+
+            // Hide all pages
+            document.querySelectorAll('.page-view').forEach(page => {
+                page.classList.add('hidden');
+            });
+
+            // Show selected page
+            const targetPage = document.getElementById(`page-${tabId}`);
+            if (targetPage) {
+                targetPage.classList.remove('hidden');
+            }
+
+            // Update Header Navigation Active Styling
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('text-brand-blue', 'bg-white', 'shadow-sm', 'font-semibold');
+                btn.classList.add('text-slate-600', 'font-medium');
+            });
+
+            const activeBtn = document.getElementById(`nav-${tabId}`);
+            if (activeBtn) {
+                activeBtn.classList.remove('text-slate-600', 'font-medium');
+                activeBtn.classList.add('text-brand-blue', 'bg-white', 'shadow-sm', 'font-semibold');
+            }
+
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // Auto trigger code preview if switching to Code Workspace
+            if (tabId === 'code') {
+                setTimeout(runCodePreview, 100);
+            }
+        }
+
+        // Demo Modal Controls
+        function openDemoModal() {
+            document.getElementById('demoModal').classList.remove('hidden');
+        }
+        function closeDemoModal() {
+            document.getElementById('demoModal').classList.add('hidden');
+        }
+
+        // Search Modal Controls
+        function toggleSearchModal() {
+            const modal = document.getElementById('searchModal');
+            modal.classList.toggle('hidden');
+        }
+
+        function handleSearchQuery(query) {
+            // Simple filter simulation
+            const results = document.getElementById('searchResults');
+            if (!query.trim()) {
+                results.innerHTML = `
+                    <div class="p-2 hover:bg-slate-50 rounded-lg cursor-pointer" onclick="toggleSearchModal(); switchTab('tools')">🔧 Developer Tools</div>
+                    <div class="p-2 hover:bg-slate-50 rounded-lg cursor-pointer" onclick="toggleSearchModal(); switchTab('pricing')">💳 Pricing Plans</div>
+                    <div class="p-2 hover:bg-slate-50 rounded-lg cursor-pointer" onclick="toggleSearchModal(); switchTab('help')">❓ Frequently Asked Questions</div>
+                `;
+            } else {
+                results.innerHTML = `<div class="p-2 text-slate-500">Searching for "${query}" across ChatCode docs...</div>`;
+            }
+        }
+
+        // Payment Disclaimer Modal
+        function openPaymentModal(plan, price) {
+            document.getElementById('paymentPlanTitle').innerText = `${plan} (${price})`;
+            document.getElementById('paymentModal').classList.remove('hidden');
+        }
+
+        function closePaymentModal() {
+            document.getElementById('paymentModal').classList.add('hidden');
+        }
+
+        function confirmPaymentInterest() {
+            closePaymentModal();
+            showToast("Thank you! You are on the early-access list.");
+        }
+
+        // Toast Notification Helper
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').innerText = message;
+            toast.classList.remove('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'pointer-events-none');
+            }, 3000);
+        }
+
+        // ==========================================
+        // AI CHAT FUNCTIONS
+        // ==========================================
+        function sendQuickPrompt(promptText) {
+            document.getElementById('chatInput').value = promptText;
+            handleChatSubmit(new Event('submit'));
+        }
+
+        function triggerFileUpload() {
+            document.getElementById('chatFileInput').click();
+        }
+
+        function handleFileSelected(event) {
+            const file = event.target.files[0];
+            if (file) {
+                selectedFile = file.name;
+                document.getElementById('fileStatus').innerText = `Attached: ${file.name}`;
+                showToast(`File attached: ${file.name}`);
+            }
+        }
+
+        function toggleVoiceMic() {
+            isVoiceActive = !isVoiceActive;
+            const micBtn = document.getElementById('micBtn');
+            if (isVoiceActive) {
+                micBtn.classList.add('text-brand-orange', 'animate-pulse');
+                showToast("Voice listening active...");
+            } else {
+                micBtn.classList.remove('text-brand-orange', 'animate-pulse');
+                showToast("Voice input stopped.");
+            }
+        }
+
+        function handleChatSubmit(event) {
+            event.preventDefault();
+            const input = document.getElementById('chatInput');
+            const userMsg = input.value.trim();
+            if (!userMsg) return;
+
+            // Render User Message
+            appendMessage('user', userMsg);
+            input.value = '';
+
+            // Reset file attachment display if any
+            document.getElementById('fileStatus').innerText = '';
+
+            // Generate Simulated AI Response with Workflow
+            setTimeout(() => {
+                generateAiResponse(userMsg);
+            }, 700);
+        }
+
+        function appendMessage(sender, text, codeSnippet = null) {
+            const container = document.getElementById('chatMessages');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'flex gap-3 animate-fade-in';
+
+            if (sender === 'user') {
+                msgDiv.innerHTML = `
+                    <div class="w-8 h-8 rounded-full bg-slate-800 text-white flex-shrink-0 flex items-center justify-center text-xs font-bold ml-auto order-2">
+                        YOU
+                    </div>
+                    <div class="bg-brand-blue text-white rounded-2xl rounded-tr-none p-4 max-w-2xl text-sm ml-auto order-1 shadow-sm">
+                        <p>${text}</p>
+                    </div>
+                `;
+            } else {
+                let codeCardHtml = '';
+                if (codeSnippet) {
+                    codeCardHtml = `
+                        <div class="mt-3 bg-slate-900 text-slate-100 rounded-xl p-3 code-font text-xs overflow-x-auto border border-slate-800">
+                            <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-2 text-[11px] text-slate-400">
+                                <span>HTML Component</span>
+                                <div class="flex gap-2">
+                                    <button onclick="copyTextToClipboard(\`${escapeQuotes(codeSnippet)}\`)" class="hover:text-white"><i class="fa-regular fa-copy"></i> Copy</button>
+                                    <button onclick="transferToWorkspace(\`${escapeQuotes(codeSnippet)}\`)" class="text-brand-orange hover:underline font-bold"><i class="fa-solid fa-square-arrow-up-right"></i> Send to Workspace</button>
+                                </div>
+                            </div>
+                            <pre><code>${escapeHtml(codeSnippet)}</code></pre>
+                        </div>
+                    `;
+                }
+
+                msgDiv.innerHTML = `
+                    <div class="w-8 h-8 rounded-full bg-brand-blue text-white flex-shrink-0 flex items-center justify-center text-xs font-bold">
+                        AI
+                    </div>
+                    <div class="bg-slate-100 rounded-2xl rounded-tl-none p-4 max-w-2xl text-slate-800 text-sm space-y-2 shadow-sm">
+                        <p>${text}</p>
+                        ${codeCardHtml}
+                    </div>
+                `;
+            }
+
+            container.appendChild(msgDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function generateAiResponse(userText) {
+            const lower = userText.toLowerCase();
+
+            if (lower.includes('todo') || lower.includes('plan')) {
+                const text = "Here is a structured plan for your web app project:<br><br><b>Step 1:</b> Define layout with title, input bar, and clear button.<br><b>Step 2:</b> Add CSS card styling and interactive hover states.<br><b>Step 3:</b> Implement JavaScript array list management.<br><br>I generated an initial HTML structure for you:";
+                const code = `<div style="padding:20px; background:#fff; border-radius:12px;">\n  <h3>My Todo List</h3>\n  <input type="text" placeholder="Add task..." style="padding:8px; border:1px solid #ccc; border-radius:6px;">\n  <button style="background:#0D5CFF; color:#fff; padding:8px 15px; border:none; border-radius:6px;">Add</button>\n</div>`;
+                appendMessage('ai', text, code);
+            } else if (lower.includes('landing') || lower.includes('component')) {
+                const text = "Great choice! Here is a clean hero component structure designed with high contrast CTA buttons:";
+                const code = `<section style="text-align:center; padding:40px; background:#E8F0FF; border-radius:16px;">\n  <h1 style="color:#0D5CFF; font-size:28px;">Build Faster Today</h1>\n  <p style="color:#475569;">The smart platform for developers.</p>\n  <button style="background:#FF7A00; color:white; padding:12px 24px; border:none; border-radius:8px; font-weight:bold;">Get Started Free</button>\n</section>`;
+                appendMessage('ai', text, code);
+            } else {
+                appendMessage('ai', `I analyzed your query: "<i>${userText}</i>". <br><br>Let's plan out the implementation together. Would you like me to draft the HTML structure or provide JavaScript logic first?`);
+            }
+        }
+
+        function transferToWorkspace(codeSnippet) {
+            document.getElementById('code-html').value = codeSnippet;
+            switchTab('code');
+            showToast("Code transferred to Workspace!");
+        }
+
+        function startNewChat() {
+            document.getElementById('chatMessages').innerHTML = `
+                <div class="flex gap-3">
+                    <div class="w-8 h-8 rounded-full bg-brand-blue text-white flex-shrink-0 flex items-center justify-center text-xs font-bold">
+                        AI
+                    </div>
+                    <div class="bg-slate-100 rounded-2xl rounded-tl-none p-4 max-w-2xl text-slate-800 text-sm space-y-2 shadow-sm">
+                        <p class="font-semibold text-brand-blue">New Chat Started 🚀</p>
+                        <p>How can I help you plan or code your next idea today?</p>
+                    </div>
+                </div>
+            `;
+            showToast("New conversation ready");
+        }
+
+        function clearChatHistory() {
+            startNewChat();
+        }
+
+        // ==========================================
+        // CODE WORKSPACE FUNCTIONS
+        // ==========================================
+        function selectCodeTab(type) {
+            document.querySelectorAll('.code-editor-area').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.code-tab-btn').forEach(btn => {
+                btn.classList.remove('bg-slate-800', 'text-brand-orange', 'border', 'border-slate-700');
+                btn.classList.add('bg-transparent', 'text-slate-400');
+            });
+
+            document.getElementById(`code-${type}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`tab-btn-${type}`);
+            activeBtn.classList.remove('bg-transparent', 'text-slate-400');
+            activeBtn.classList.add('bg-slate-800', 'text-brand-orange', 'border', 'border-slate-700');
+        }
+
+        function runCodePreview() {
+            const html = document.getElementById('code-html').value;
+            const iframe = document.getElementById('codePreviewFrame');
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+
+            iframeDoc.open();
+            iframeDoc.write(html);
+            iframeDoc.close();
+        }
+
+        function copyCurrentCode() {
+            const html = document.getElementById('code-html').value;
+            copyTextToClipboard(html);
+        }
+
+        function downloadCodeFiles() {
+            const html = document.getElementById('code-html').value;
+            const blob = new Blob([html], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'chatcode-export.html';
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast("Downloaded chatcode-export.html");
+        }
+
+        function clearCodeEditors() {
+            document.getElementById('code-html').value = '';
+            runCodePreview();
+            showToast("Editor cleared.");
+        }
+
+        // ==========================================
+        // DEVELOPER TOOLS FUNCTIONS
+        // ==========================================
+        function formatJson() {
+            const input = document.getElementById('toolJsonInput');
+            try {
+                const parsed = JSON.parse(input.value);
+                input.value = JSON.stringify(parsed, null, 2);
+                showToast("JSON Formatted Successfully");
+            } catch (e) {
+                showToast("Invalid JSON string");
+            }
+        }
+
+        function minifyJson() {
+            const input = document.getElementById('toolJsonInput');
+            try {
+                const parsed = JSON.parse(input.value);
+                input.value = JSON.stringify(parsed);
+                showToast("JSON Minified");
+            } catch (e) {
+                showToast("Invalid JSON string");
+            }
+        }
+
+        function updateColorTool() {
+            const hex = document.getElementById('toolColorInput').value;
+            document.getElementById('colorHex').innerText = `HEX: ${hex.toUpperCase()}`;
+            // Convert to RGB
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            document.getElementById('colorRgb').innerText = `RGB: rgb(${r}, ${g}, ${b})`;
+        }
+
+        function convertCase(type) {
+            const input = document.getElementById('toolCaseInput');
+            let txt = input.value;
+            if (!txt) return;
+
+            if (type === 'upper') input.value = txt.toUpperCase();
+            if (type === 'lower') input.value = txt.toLowerCase();
+            if (type === 'camel') input.value = txt.replace(/(?:^\w|[A-Z]|\b\w|\s+)/g, (match, index) => +match === 0 ? "" : (index === 0 ? match.toLowerCase() : match.toUpperCase()));
+            if (type === 'kebab') input.value = txt.toLowerCase().replace(/\s+/g, '-');
+            showToast(`Converted to ${type}`);
+        }
+
+        function encodeUrl() {
+            const input = document.getElementById('toolUrlInput');
+            input.value = encodeURIComponent(input.value);
+            showToast("URL Encoded");
+        }
+
+        function decodeUrl() {
+            const input = document.getElementById('toolUrlInput');
+            input.value = decodeURIComponent(input.value);
+            showToast("URL Decoded");
+        }
+
+        function calculateWordStats() {
+            const text = document.getElementById('toolWordInput').value.trim();
+            const words = text ? text.split(/\s+/).length : 0;
+            const chars = text.length;
+            const readingTime = Math.ceil(words / 200 * 60);
+
+            document.getElementById('statWords').innerText = words;
+            document.getElementById('statChars').innerText = chars;
+            document.getElementById('statTime').innerText = `${readingTime}s`;
+        }
+
+        function encodeBase64() {
+            const input = document.getElementById('toolBase64Input');
+            try {
+                input.value = btoa(input.value);
+                showToast("Base64 Encoded");
+            } catch (e) {
+                showToast("Error encoding Base64");
+            }
+        }
+
+        function decodeBase64() {
+            const input = document.getElementById('toolBase64Input');
+            try {
+                input.value = atob(input.value);
+                showToast("Base64 Decoded");
+            } catch (e) {
+                showToast("Invalid Base64 string");
+            }
+        }
+
+        function copyToolOutput(id) {
+            const val = document.getElementById(id).value;
+            copyTextToClipboard(val);
+        }
+
+        function copyToolText(id) {
+            const val = document.getElementById(id).innerText;
+            copyTextToClipboard(val);
+        }
+
+        // ==========================================
+        // PRICING TOGGLE & SUPPORT SUBMISSION
+        // ==========================================
+        function toggleBilling(mode) {
+            const monthlyBtn = document.getElementById('btn-monthly');
+            const yearlyBtn = document.getElementById('btn-yearly');
+            const pricePro = document.getElementById('price-pro');
+            const priceTeam = document.getElementById('price-team');
+
+            if (mode === 'yearly') {
+                yearlyBtn.classList.add('bg-white', 'text-slate-900', 'shadow-sm');
+                monthlyBtn.classList.remove('bg-white', 'text-slate-900', 'shadow-sm');
+                pricePro.innerText = "$7.99";
+                priceTeam.innerText = "$23.99";
+            } else {
+                monthlyBtn.classList.add('bg-white', 'text-slate-900', 'shadow-sm');
+                yearlyBtn.classList.remove('bg-white', 'text-slate-900', 'shadow-sm');
+                pricePro.innerText = "$9.99";
+                priceTeam.innerText = "$29.99";
+            }
+        }
+
+        function handleSupportSubmit(e) {
+            e.preventDefault();
+            showToast("Message sent! Support will contact you shortly.");
+            e.target.reset();
+        }
+
+        // Helper Copy Function
+        function copyTextToClipboard(text) {
+            const el = document.createElement('textarea');
+            el.value = text;
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand('copy');
+            document.body.removeChild(el);
+            showToast("Copied to clipboard!");
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
+        function escapeQuotes(str) {
+            return str.replace(/"/g, '&quot;').replace(/'/g, "\\'");
+        }
+
+        // ==========================================
+        // PWA REGISTRATION & SERVICE WORKER BLOB
+        // ==========================================
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const btn = document.getElementById('pwaInstallBtn');
+            if (btn) btn.classList.remove('hidden');
+        });
+
+        function installPwaApp() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        showToast("App Installed to Home Screen!");
+                    }
+                    deferredPrompt = null;
+                });
+            } else {
+                showToast("PWA install available via browser menu.");
+            }
+        }
+
+        // Register Inline Service Worker via Blob URL
+        if ('serviceWorker' in navigator) {
+            const swCode = `
+                self.addEventListener('install', (e) => {
+                    self.skipWaiting();
+                });
+                self.addEventListener('fetch', (e) => {
+                    // Cache-first fallback
+                });
+            `;
+            const blob = new Blob([swCode], { type: 'text/javascript' });
+            navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(() => {});
+        }
+
+        // Initialize App on Load
+        window.onload = function() {
+            // Render initial recent chats
+            const historyList = document.getElementById('chatHistoryList');
+            historyList.innerHTML = `
+                <div onclick="startNewChat()" class="p-2 text-xs text-slate-700 hover:bg-slate-200/60 rounded-lg cursor-pointer truncate font-medium">
+                    <i class="fa-regular fa-comment mr-1.5 text-brand-blue"></i> Landing Page Layout
+                </div>
+                <div onclick="startNewChat()" class="p-2 text-xs text-slate-700 hover:bg-slate-200/60 rounded-lg cursor-pointer truncate font-medium">
+                    <i class="fa-regular fa-comment mr-1.5 text-brand-blue"></i> Todo App Architecture
+                </div>
+            `;
+        };
+    </script>
+
+<script>
+/* ChatCode frontend upgrades. AI calls are intentionally not faked here:
+   connect the secure Vercel API route in the next backend stage. */
+let chatCodeProject = { name: '', files: [], important: [], total: 0, skipped: 0 };
+const CHATCODE_IGNORE = /(^|\/)(node_modules|\.git|dist|build|\.next|coverage|vendor)(\/|$)/i;
+const CHATCODE_IMPORTANT = /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|vite\.config\.[^/]+|next\.config\.[^/]+|tsconfig\.json|jsconfig\.json|README[^/]*|index\.html|\.env\.example|wrangler\.toml|vercel\.json)$/i;
+async function inspectProjectZip(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  const status = document.getElementById('projectZipStatus');
+  const details = document.getElementById('projectZipDetails');
+  const promptBtn = document.getElementById('projectPromptBtn');
+  promptBtn.classList.add('hidden'); details.classList.add('hidden');
+  if (!/\.zip$/i.test(file.name)) { status.textContent = 'Please select a ZIP file.'; return; }
+  if (file.size > 50 * 1024 * 1024) { status.textContent = 'ZIP is larger than 50 MB. Please upload a smaller project archive.'; return; }
+  if (typeof JSZip === 'undefined') { status.textContent = 'ZIP reader could not load. Check your internet connection and try again.'; return; }
+  status.textContent = 'Reading ZIP file structure…';
+  try {
+    const zip = await JSZip.loadAsync(file, { checkCRC32: false });
+    const entries = Object.values(zip.files).filter(x => !x.dir);
+    const visible = entries.filter(x => !CHATCODE_IGNORE.test(x.name) && !x.name.split('/').some(part => part.startsWith('.') && !['.github'].includes(part)));
+    const safe = visible.filter(x => !x.name.startsWith('/') && !x.name.split('/').includes('..'));
+    const important = safe.filter(x => CHATCODE_IMPORTANT.test(x.name)).map(x => x.name);
+    chatCodeProject = { name: file.name, files: safe.slice(0, 250).map(x => x.name), important, total: safe.length, skipped: entries.length-safe.length };
+    status.textContent = 'ZIP structure loaded. This is a file-list inspection, not an AI code audit yet.';
+    details.innerHTML = `<div><b>Project:</b> ${escapeHtml(file.name)}</div><div><b>Project files:</b> ${safe.length}</div><div><b>Ignored / unsafe paths:</b> ${entries.length-safe.length}</div><div><b>Key files detected:</b> ${important.length ? important.slice(0,8).map(escapeHtml).join(', ') : 'Not detected in the first-level scan'}</div><div class="mt-1 text-slate-500">Showing up to 250 file paths. Large dependency/build folders are excluded.</div>`;
+    details.classList.remove('hidden'); promptBtn.classList.remove('hidden');
+    showToast('Project ZIP structure inspected');
+  } catch (err) { status.textContent = 'Could not read this ZIP. Please check that the archive is valid.'; }
+  event.target.value = '';
+}
+function buildProjectReviewPrompt() {
+  return `You are ChatCode's careful senior codebase analyst. Review the uploaded repository ZIP itself; do not guess or claim to have read files you cannot access. First report exact file coverage and files not inspected. Ignore node_modules, .git, build outputs and generated files. Inspect project entry points, package/config files, routes, components, API calls, environment-variable usage, security, responsive UI and deployment configuration. For every finding cite exact file paths and line numbers when available. Separate confirmed bugs from risks and suggestions. Do not modify code yet. Produce: (1) architecture map, (2) working vs demo-only features, (3) bugs with evidence, (4) security/deployment issues, (5) prioritized plan in small steps. Ask for approval before each implementation step. Preserve existing UI, colors, logo, layout and working features unless explicitly approved. Never expose API keys; use server-side environment variables only.\n\nProject archive: ${chatCodeProject.name}\nFile count discovered by browser ZIP listing: ${chatCodeProject.total}\nImportant files detected: ${chatCodeProject.important.join(', ') || 'None detected'}\nVisible file paths (first 250):\n${chatCodeProject.files.join('\n')}`;
+}
+function copyProjectReviewPrompt() { copyTextToClipboard(buildProjectReviewPrompt()); }
+function copyBuildWorkflowPrompt() {
+  const prompt = 'Work with me step by step. First discuss the requirement and ask clarifying questions only when essential. Then create a clear implementation plan. Do not write or change code until I approve the plan. After approval, implement only the first approved step, preserve the current design and existing working features, explain exactly which files changed, and provide a test checklist. Wait for my confirmation before moving to the next step.';
+  copyTextToClipboard(prompt);
+}
+// Keep chat messages safe from HTML injection in user-entered text.
+const originalAppendMessage = window.appendMessage;
+window.appendMessage = function(sender, text, codeSnippet = null) {
+  if (sender === 'user') text = escapeHtml(String(text)).replace(/\n/g, '<br>');
+  return originalAppendMessage.call(this, sender, text, codeSnippet);
+};
+</script>
+
+</body>
+</html>

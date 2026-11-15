@@ -1,0 +1,6 @@
+{
+  "name": "ChatCode",
+  "description": "ChatCode — Flow Together, Code Better. Smart AI assistant and online code editor to chat, plan, write code, and build projects.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

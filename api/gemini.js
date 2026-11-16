@@ -1,4 +1,4 @@
-const DEFAULT_MODEL = 'gemini-3.8-flash';
+const DEFAULT_MODEL = 'gemini-3.1-flash';
 const MAX_TOTAL_CHARS = 3400000;
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 

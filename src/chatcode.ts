@@ -195,11 +195,16 @@ async function callGeminiApi(payload: {
   messages?: ChatMessageTurn[];
   prompt?: string;
   systemInstruction?: string;
+  model?: string;
 }): Promise<string> {
+  const modelSelect = byId<HTMLSelectElement>('chatModelSelect');
+  const selectedModel = modelSelect ? modelSelect.value : 'gemini-3.8-flash';
+  const fullPayload = { ...payload, model: payload.model || selectedModel };
+
   const response = await fetch('/api/gemini', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(fullPayload),
   });
 
   const data = (await response.json().catch(() => null)) as { text?: string; error?: string } | null;

@@ -116,7 +116,8 @@ export default async function handler(req, res) {
     });
   }
 
-  const model = (process.env.GEMINI_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
+  const requestedModel = typeof body?.model === 'string' ? body.model.trim() : '';
+  const model = requestedModel || (process.env.GEMINI_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
 
   const payload = { contents };

@@ -1,32 +1,62 @@
 const DEFAULT_MODEL = 'gemini-2.5-flash';
-const MAX_TOTAL_CHARS = 450000;
+const MAX_TOTAL_CHARS = 3400000;
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+class PayloadTooLargeError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'PayloadTooLargeError';
+  }
+}
 
 async function readRawBody(req) {
   if (req.body !== undefined && req.body !== null) {
     if (typeof req.body === 'string') {
+      if (Buffer.byteLength(req.body, 'utf8') > MAX_BODY_BYTES) {
+        throw new PayloadTooLargeError('Request body exceeds 4 MB limit.');
+      }
       return JSON.parse(req.body || '{}');
     }
     if (Buffer.isBuffer(req.body)) {
+      if (req.body.byteLength > MAX_BODY_BYTES) {
+        throw new PayloadTooLargeError('Request body exceeds 4 MB limit.');
+      }
       return JSON.parse(req.body.toString('utf8') || '{}');
+    }
+    const serializedBytes = Buffer.byteLength(JSON.stringify(req.body), 'utf8');
+    if (serializedBytes > MAX_BODY_BYTES) {
+      throw new PayloadTooLargeError('Request body exceeds 4 MB limit.');
     }
     return req.body;
   }
 
   return await new Promise((resolve, reject) => {
-    let raw = '';
+    const chunks = [];
+    let totalBytes = 0;
+    let tooLarge = false;
+
     req.on('data', (chunk) => {
-      raw += chunk;
-      if (raw.length > 2 * 1024 * 1024) {
-        reject(new Error('Request payload too large.'));
+      if (tooLarge) return;
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), 'utf8');
+      totalBytes += buf.byteLength;
+      if (totalBytes > MAX_BODY_BYTES) {
+        tooLarge = true;
+        reject(new PayloadTooLargeError('Request body exceeds 4 MB limit.'));
+        return;
       }
+      chunks.push(buf);
     });
+
     req.on('end', () => {
+      if (tooLarge) return;
       try {
+        const raw = Buffer.concat(chunks).toString('utf8');
         resolve(raw ? JSON.parse(raw) : {});
       } catch {
         reject(new Error('Invalid JSON request body.'));
       }
     });
+
     req.on('error', reject);
   });
 }
@@ -48,7 +78,8 @@ export default async function handler(req, res) {
   try {
     body = await readRawBody(req);
   } catch (err) {
-    return res.status(400).json({
+    const statusCode = err instanceof PayloadTooLargeError ? 413 : 400;
+    return res.status(statusCode).json({
       error: err instanceof Error ? err.message : 'Invalid request body.',
     });
   }
@@ -81,7 +112,7 @@ export default async function handler(req, res) {
 
   if (totalChars > MAX_TOTAL_CHARS) {
     return res.status(413).json({
-      error: 'Request content is too large. Please shorten your message or attachment.',
+      error: 'Request content exceeds 3,400,000 character limit.',
     });
   }
 

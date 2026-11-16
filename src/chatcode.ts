@@ -1,3 +1,5 @@
+import { runStaticChecks, type ZipCheckResult } from './zipChecks.ts';
+
 type PageTab = 'home' | 'chat' | 'code' | 'tools' | 'pricing' | 'about' | 'help';
 type CodeTab = 'html' | 'css' | 'js';
 type BillingMode = 'monthly' | 'yearly';
@@ -27,6 +29,9 @@ interface ExtractedProjectFile {
 interface ProjectSummary {
   name: string;
   files: string[];
+  allPaths: string[];
+  notSent: string[];
+  checks: ZipCheckResult[];
   important: string[];
   extracted: ExtractedProjectFile[];
   total: number;
@@ -84,25 +89,27 @@ declare global {
   }
 }
 
-const MAX_CHAT_TEXT_FILE_BYTES = 300 * 1024; // 300 KB
-const MAX_ZIP_FILE_BYTES = 50 * 1024 * 1024; // 50 MB compressed archive limit
+const MAX_CHAT_TEXT_FILE_BYTES = 3 * 1024 * 1024; // 3 MB
+const MAX_ZIP_FILE_BYTES = 3 * 1024 * 1024; // 3 MB compressed archive limit
 const MAX_ZIP_ENTRIES = 5000;
-const MAX_SINGLE_UNCOMPRESSED_BYTES = 15 * 1024 * 1024; // 15 MB per file
-const MAX_TOTAL_UNCOMPRESSED_BYTES = 150 * 1024 * 1024; // 150 MB extracted total
-const MAX_ZIP_SNIPPET_BYTES = 20 * 1024; // 20 KB per extracted file for Gemini prompt
-const MAX_ZIP_TOTAL_CONTEXT_BYTES = 120 * 1024; // 120 KB total extracted context for Gemini
+const MAX_SINGLE_UNCOMPRESSED_BYTES = 5 * 1024 * 1024; // 5 MB per file
+const MAX_TOTAL_UNCOMPRESSED_BYTES = 40 * 1024 * 1024; // 40 MB extracted total
+const MAX_ZIP_CHARS_PER_FILE = 400000; // 400,000 characters per file
+const MAX_ZIP_TOTAL_UTF8_BYTES = 2400000; // 2,400,000 UTF-8 bytes total
+const MAX_VISIBLE_ZIP_PATHS = 1000;
 
 const CHATCODE_SYSTEM_INSTRUCTION =
   'You are ChatCode, a helpful, concise senior software engineer and coding assistant. Follow the Chat -> Plan -> Code workflow. When providing code, use fenced Markdown code blocks with the language tag (```html, ```css, ```javascript, etc.) so users can copy or send code directly to the workspace.';
 
-const CHATCODE_IGNORE = /(^|\/)(node_modules|\.git|dist|build|\.next|coverage|vendor)(\/|$)/i;
+const CHATCODE_IGNORE = /(^|\/)(node_modules|dist|build|\.git)(\/|$)/i;
 const CHATCODE_IMPORTANT =
   /(^|\/)(package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|vite\.config\.[^/]+|next\.config\.[^/]+|tsconfig\.json|jsconfig\.json|README[^/]*|index\.html|\.env\.example|wrangler\.toml|vercel\.json)$/i;
+const LOCK_FILE_RE = /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/i;
+const ALLOWED_DOTFILES = new Set(['.env.example', '.gitignore', '.gitattributes', '.nvmrc']);
 const TEXT_FILE_EXT_RE =
-  /\.(txt|md|markdown|html|htm|css|scss|less|js|mjs|cjs|ts|tsx|jsx|json|xml|svg|csv|yml|yaml|toml|ini|conf|py|java|c|cpp|h|hpp|cs|php|rb|go|rs|sh|bash|zsh|sql|gitignore|gitattributes|env\.example)$/i;
-const SECRET_ENV_RE = /(^|\/)\.env(\.|$)/i;
+  /\.(txt|md|markdown|html|htm|css|scss|less|js|mjs|cjs|ts|tsx|jsx|json|xml|svg|csv|yml|yaml|toml|ini|conf|py|java|c|cpp|h|hpp|cs|php|rb|go|rs|sh|bash|zsh|sql|gitignore|gitattributes|nvmrc|env\.example)$/i;
 const BINARY_EXT_RE =
-  /\.(png|jpe?g|gif|webp|ico|bmp|tiff|woff2?|ttf|eot|otf|mp3|mp4|wav|ogg|webm|pdf|zip|tar|gz|7z|rar|exe|dll|so|dylib|bin|wasm|map|lock)$/i;
+  /\.(png|jpe?g|gif|webp|ico|bmp|tiff|woff2?|ttf|eot|otf|mp3|mp4|wav|ogg|webm|pdf|zip|tar|gz|7z|rar|exe|dll|so|dylib|bin|wasm|map)$/i;
 
 let currentTab: PageTab = 'home';
 let activeCodeTab: CodeTab = 'html';
@@ -118,6 +125,9 @@ let chatConversation: ChatMessageTurn[] = [];
 let chatCodeProject: ProjectSummary = {
   name: '',
   files: [],
+  allPaths: [],
+  notSent: [],
+  checks: [],
   important: [],
   extracted: [],
   total: 0,
@@ -391,8 +401,8 @@ async function handleFileSelected(event: Event): Promise<void> {
   if (file.size > MAX_CHAT_TEXT_FILE_BYTES) {
     attachedTextFile = null;
     input.value = '';
-    if (statusEl) statusEl.textContent = 'File exceeds 300 KB limit.';
-    showToast('Text file must be 300 KB or smaller.');
+    if (statusEl) statusEl.textContent = 'File exceeds 3 MB limit.';
+    showToast('Text file must be 3 MB or smaller.');
     return;
   }
 
@@ -460,7 +470,7 @@ function toggleVoiceMic(): void {
   try {
     const recognition = new SpeechCtor();
     speechRecognition = recognition;
-    recognition.lang = 'en-US';
+    recognition.lang = 'hi-IN';
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
 
@@ -720,8 +730,14 @@ async function submitChatMessage(): Promise<void> {
   const fileStatus = byId<HTMLElement>('fileStatus');
   if (fileStatus) fileStatus.textContent = '';
 
-  chatConversation.push({ role: 'user', text: apiTurnText });
-  const recentHistory = chatConversation.slice(-16);
+  chatConversation.push({ role: 'user', text: displayText });
+  const recentHistory = chatConversation.slice(-16).map((turn) => ({ ...turn }));
+  if (recentHistory.length > 0 && apiTurnText !== displayText) {
+    recentHistory[recentHistory.length - 1] = {
+      role: 'user',
+      text: apiTurnText,
+    };
+  }
 
   isAiLoading = true;
   const loadingBubble = appendThinkingBubble();
@@ -1100,51 +1116,123 @@ function isSafeZipPath(rawName: string): boolean {
   return true;
 }
 
-async function extractReadableProjectFiles(safeEntries: JSZipEntryLike[]): Promise<ExtractedProjectFile[]> {
-  const candidates = safeEntries
-    .filter((entry) => {
-      if (SECRET_ENV_RE.test(entry.name) && !entry.name.endsWith('.env.example')) {
-        return false;
-      }
-      if (BINARY_EXT_RE.test(entry.name)) {
-        return false;
-      }
-      const size = entry._data?.uncompressedSize ?? 0;
-      if (size > 200 * 1024) {
-        return false;
-      }
-      return CHATCODE_IMPORTANT.test(entry.name) || TEXT_FILE_EXT_RE.test(entry.name);
-    })
-    .sort((a, b) => {
-      const aImp = CHATCODE_IMPORTANT.test(a.name) ? 0 : 1;
-      const bImp = CHATCODE_IMPORTANT.test(b.name) ? 0 : 1;
-      if (aImp !== bImp) return aImp - bImp;
-      return a.name.length - b.name.length;
-    });
+type ZipEntryKind = 'keep' | 'env-secret' | 'skip-dot';
 
-  const extracted: ExtractedProjectFile[] = [];
-  let totalBytes = 0;
+function normalizeZipPath(rawName: string): string {
+  return rawName.replace(/\\/g, '/').replace(/^\.\//, '');
+}
 
-  for (const entry of candidates) {
-    if (extracted.length >= 25 || totalBytes >= MAX_ZIP_TOTAL_CONTEXT_BYTES) {
-      break;
-    }
-    try {
-      const raw = await entry.async('string');
-      if (raw.includes('\0')) continue;
-      const truncated = raw.length > MAX_ZIP_SNIPPET_BYTES;
-      const snippet = truncated ? `${raw.slice(0, MAX_ZIP_SNIPPET_BYTES)}\n/* ...truncated... */` : raw;
-      if (totalBytes + snippet.length > MAX_ZIP_TOTAL_CONTEXT_BYTES) {
-        continue;
-      }
-      totalBytes += snippet.length;
-      extracted.push({ path: entry.name, content: snippet, truncated });
-    } catch {
-      // Skip unreadable entry
-    }
+function classifyZipEntry(normalizedPath: string): ZipEntryKind {
+  const parts = normalizedPath.split('/').filter(Boolean);
+  if (parts.length === 0) return 'skip-dot';
+
+  const dirParts = parts.slice(0, -1);
+  if (dirParts.some((part) => part.startsWith('.') && part !== '.github')) {
+    return 'skip-dot';
   }
 
-  return extracted;
+  const base = parts[parts.length - 1];
+  if (base === '.env' || base === '.env.local') {
+    return 'env-secret';
+  }
+
+  if (base.startsWith('.')) {
+    return ALLOWED_DOTFILES.has(base) ? 'keep' : 'skip-dot';
+  }
+
+  return 'keep';
+}
+
+interface PreparedZipEntry {
+  entry: JSZipEntryLike;
+  path: string;
+  kind: ZipEntryKind;
+}
+
+async function processSafeZipEntries(
+  preparedEntries: PreparedZipEntry[]
+): Promise<{
+  extracted: ExtractedProjectFile[];
+  notSent: string[];
+  staticFiles: Map<string, string>;
+}> {
+  const sorted = [...preparedEntries].sort((a, b) => {
+    const aImp = CHATCODE_IMPORTANT.test(a.path) ? 0 : 1;
+    const bImp = CHATCODE_IMPORTANT.test(b.path) ? 0 : 1;
+    if (aImp !== bImp) return aImp - bImp;
+    return a.path.length - b.path.length || a.path.localeCompare(b.path);
+  });
+
+  const encoder = new TextEncoder();
+  const staticFiles = new Map<string, string>();
+  const extracted: ExtractedProjectFile[] = [];
+  const notSent: string[] = [];
+  let totalUtf8Bytes = 0;
+
+  for (const item of sorted) {
+    const { entry, path, kind } = item;
+    if (kind === 'env-secret') {
+      notSent.push(path);
+      continue;
+    }
+
+    if (BINARY_EXT_RE.test(path)) {
+      notSent.push(path);
+      continue;
+    }
+
+    const uncompressed = entry._data?.uncompressedSize ?? 0;
+    if (uncompressed > MAX_SINGLE_UNCOMPRESSED_BYTES) {
+      notSent.push(path);
+      continue;
+    }
+
+    const isLockFile = LOCK_FILE_RE.test(path);
+    const isPackageLock = /(^|\/)package-lock\.json$/i.test(path);
+    if (isLockFile) {
+      notSent.push(path);
+      if (isPackageLock) {
+        try {
+          const lockRaw = await entry.async('string');
+          if (!lockRaw.includes('\0') && encoder.encode(lockRaw).byteLength <= MAX_SINGLE_UNCOMPRESSED_BYTES) {
+            staticFiles.set(path, lockRaw);
+          }
+        } catch {
+          // Ignore unreadable package-lock.json
+        }
+      }
+      continue;
+    }
+
+    let raw: string;
+    try {
+      raw = await entry.async('string');
+    } catch {
+      notSent.push(path);
+      continue;
+    }
+
+    if (raw.includes('\0') || encoder.encode(raw).byteLength > MAX_SINGLE_UNCOMPRESSED_BYTES) {
+      notSent.push(path);
+      continue;
+    }
+
+    staticFiles.set(path, raw);
+
+    const truncated = raw.length > MAX_ZIP_CHARS_PER_FILE;
+    const content = truncated ? `${raw.slice(0, MAX_ZIP_CHARS_PER_FILE)}\n/* ...TRUNCATED... */` : raw;
+    const contentBytes = encoder.encode(content).byteLength;
+
+    if (totalUtf8Bytes + contentBytes > MAX_ZIP_TOTAL_UTF8_BYTES) {
+      notSent.push(path);
+      continue;
+    }
+
+    totalUtf8Bytes += contentBytes;
+    extracted.push({ path, content, truncated });
+  }
+
+  return { extracted, notSent, staticFiles };
 }
 
 async function inspectProjectZip(event: Event): Promise<void> {
@@ -1170,7 +1258,7 @@ async function inspectProjectZip(event: Event): Promise<void> {
   }
 
   if (file.size > MAX_ZIP_FILE_BYTES) {
-    status.textContent = 'ZIP is larger than 50 MB. Please upload a smaller project archive.';
+    status.textContent = 'ZIP is larger than 3 MB. Please upload a smaller project archive.';
     input.value = '';
     return;
   }
@@ -1197,7 +1285,7 @@ async function inspectProjectZip(event: Event): Promise<void> {
 
     let totalUncompressedBytes = 0;
     let oversizedEntryFound = false;
-    const safeEntries: JSZipEntryLike[] = [];
+    const preparedEntries: PreparedZipEntry[] = [];
 
     for (const entry of fileEntries) {
       const uncompressed = entry._data?.uncompressedSize ?? 0;
@@ -1215,33 +1303,43 @@ async function inspectProjectZip(event: Event): Promise<void> {
         continue;
       }
 
-      const normalized = entry.name.replace(/\\/g, '/');
+      const normalized = normalizeZipPath(entry.name);
       if (CHATCODE_IGNORE.test(normalized)) {
         continue;
       }
-      if (normalized.split('/').some((part) => part.startsWith('.') && !['.github'].includes(part))) {
+
+      const kind = classifyZipEntry(normalized);
+      if (kind === 'skip-dot') {
         continue;
       }
 
-      safeEntries.push(entry);
+      preparedEntries.push({ entry, path: normalized, kind });
     }
 
     if (oversizedEntryFound) {
-      status.textContent = 'ZIP extracted size exceeds safety limits (15 MB per file or 150 MB total).';
+      status.textContent = 'ZIP extracted size exceeds safety limits (5 MB per file or 40 MB total).';
       input.value = '';
       return;
     }
 
-    const important = safeEntries.filter((entry) => CHATCODE_IMPORTANT.test(entry.name)).map((entry) => entry.name);
-    const skippedCount = fileEntries.length - safeEntries.length;
-    const extracted = await extractReadableProjectFiles(safeEntries);
+    const allPaths = preparedEntries.map((item) => item.path);
+    const important = preparedEntries
+      .filter((item) => CHATCODE_IMPORTANT.test(item.path))
+      .map((item) => item.path);
+    const skippedCount = fileEntries.length - preparedEntries.length;
+
+    const { extracted, notSent, staticFiles } = await processSafeZipEntries(preparedEntries);
+    const checks = runStaticChecks(staticFiles, allPaths);
 
     chatCodeProject = {
       name: file.name,
-      files: safeEntries.slice(0, 250).map((entry) => entry.name),
+      files: allPaths.slice(0, MAX_VISIBLE_ZIP_PATHS),
+      allPaths,
+      notSent,
+      checks,
       important,
       extracted,
-      total: safeEntries.length,
+      total: allPaths.length,
       skipped: skippedCount,
     };
 
@@ -1256,17 +1354,37 @@ async function inspectProjectZip(event: Event): Promise<void> {
     };
 
     addDetailRow('Project:', file.name);
-    addDetailRow('Project files:', String(safeEntries.length));
+    addDetailRow('Project files:', String(allPaths.length));
     addDetailRow('Ignored / unsafe paths:', String(skippedCount));
     addDetailRow(
       'Key files detected:',
       important.length ? important.slice(0, 8).join(', ') : 'Not detected in the first-level scan'
     );
 
+    const problems = checks.filter((c) => c.level === 'problem');
+    const warnings = checks.filter((c) => c.level === 'warning');
+    addDetailRow(
+      'Checks:',
+      `${problems.length} problems, ${warnings.length} warnings`
+    );
+
+    problems.slice(0, 5).forEach((item) => {
+      const pRow = document.createElement('div');
+      pRow.textContent = `Problem: ${item.text}`;
+      details.appendChild(pRow);
+    });
+
     const note = document.createElement('div');
     note.className = 'mt-1 text-slate-500';
-    note.textContent = 'Showing up to 250 file paths. Large dependency/build folders are excluded.';
+    note.textContent = `Showing ${Math.min(allPaths.length, MAX_VISIBLE_ZIP_PATHS)} of ${allPaths.length} file paths (max ${MAX_VISIBLE_ZIP_PATHS}). Large dependency/build folders are excluded.`;
     details.appendChild(note);
+
+    if (allPaths.length > 0) {
+      const pathListEl = document.createElement('div');
+      pathListEl.className = 'max-h-32 overflow-y-auto whitespace-pre-wrap break-all';
+      pathListEl.textContent = allPaths.slice(0, MAX_VISIBLE_ZIP_PATHS).join('\n');
+      details.appendChild(pathListEl);
+    }
 
     details.classList.remove('hidden');
     promptBtn.classList.remove('hidden');
@@ -1280,14 +1398,57 @@ async function inspectProjectZip(event: Event): Promise<void> {
 }
 
 function buildProjectReviewPrompt(): string {
-  const fileContentsSection = chatCodeProject.extracted.length
-    ? `\n\nReadable source/config files extracted (${chatCodeProject.extracted.length} files):\n` +
-      chatCodeProject.extracted
-        .map((f) => `\n=== FILE: ${f.path} ===\n${f.content}`)
-        .join('\n')
-    : '';
+  const checkLines = chatCodeProject.checks.length
+    ? chatCodeProject.checks.map((c) => `[${c.level.toUpperCase()}] ${c.text}`).join('\n')
+    : 'No static checks ran.';
 
-  return `You are ChatCode's careful senior codebase analyst. Review ONLY the project files and paths provided below; do not guess or claim to have read files outside this list. Report exact file coverage, architecture structure, bugs/errors found in the extracted files, security/deployment issues, and prioritized next improvements.\n\nProject archive: ${chatCodeProject.name}\nTotal visible files: ${chatCodeProject.total}\nImportant files detected: ${chatCodeProject.important.join(', ') || 'None detected'}\nVisible file paths (first 250):\n${chatCodeProject.files.join('\n')}${fileContentsSection}`;
+  const allPathsSection = chatCodeProject.allPaths.length
+    ? chatCodeProject.allPaths.join('\n')
+    : 'None';
+
+  const notSentSection = chatCodeProject.notSent.length
+    ? chatCodeProject.notSent.join('\n')
+    : 'None';
+
+  const fileContentsSection = chatCodeProject.extracted.length
+    ? chatCodeProject.extracted
+        .map((f) => `\n=== FILE: ${f.path}${f.truncated ? ' [TRUNCATED]' : ''} ===\n${f.content}`)
+        .join('\n')
+    : 'No readable source files extracted.';
+
+  return [
+    'Aap ChatCode ke senior code reviewer hain. Sirf neeche diye gaye facts, file paths aur file content ke aadhar par project ka review karein.',
+    'Niyam:',
+    '- Jawab aasan aur chhote Hindi vakyo (short, simple sentences) mein dein.',
+    '- Static Check Results ko sach (true facts) maanein.',
+    '- Jis file ka content nahi bheja gaya ("Not sent" list) ya jo [TRUNCATED] hai, uske baare mein andaza na lagayein — use D) Doubts mein likhein.',
+    '',
+    'Jawab bilkul isi exact format aur headings ke saath dein:',
+    'A) Build and deploy problems',
+    'B) Feature problems',
+    'C) Security problems',
+    'D) Doubts',
+    'E) What is correct',
+    'F) Next step (maximum 3 short points)',
+    '',
+    `Project archive: ${chatCodeProject.name}`,
+    `Total visible files: ${chatCodeProject.total}`,
+    `Files sent to Gemini: ${chatCodeProject.extracted.length}`,
+    `Files not sent: ${chatCodeProject.notSent.length}`,
+    `Important files detected: ${chatCodeProject.important.join(', ') || 'None detected'}`,
+    '',
+    'Static Check Results (true facts):',
+    checkLines,
+    '',
+    `All File Paths (${chatCodeProject.allPaths.length}):`,
+    allPathsSection,
+    '',
+    `Not Sent File List (${chatCodeProject.notSent.length}):`,
+    notSentSection,
+    '',
+    `Sent File Contents (${chatCodeProject.extracted.length} files):`,
+    fileContentsSection,
+  ].join('\n');
 }
 
 function copyProjectReviewPrompt(): void {
@@ -1317,7 +1478,7 @@ async function analyzeProjectWithGemini(): Promise<void> {
   });
 
   const reviewPrompt = buildProjectReviewPrompt();
-  chatConversation.push({ role: 'user', text: reviewPrompt });
+  chatConversation.push({ role: 'user', text: `[ZIP analysis requested: ${chatCodeProject.name}]` });
   isAiLoading = true;
   const loadingBubble = appendThinkingBubble();
 
